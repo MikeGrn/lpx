@@ -1,0 +1,5 @@
+cmake_minimum_required (VERSION 2.6)
+project (lpx)
+add_executable(lpx src/main.c )
+add_executable(webcam src/webcam.c)
+target_link_libraries(lpx usb-1.0)
