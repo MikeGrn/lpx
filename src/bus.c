@@ -27,7 +27,7 @@ static unsigned char buffer[8];
 
 static enum BusState busState = NOT_INITIALIZED;
 
-static uint32_t trainId = 0;
+static int64_t trainId = 0;
 
 
 static void find_device(libusb_device *const *devs, ssize_t cnt);
@@ -39,6 +39,7 @@ int8_t bus_init() {
     int r; //for return values
     ssize_t cnt; //holding number of devices in list
     r = libusb_init(&ctx); //initialize a library session
+    libusb_set_debug(ctx, 3); //set verbosity level to 3, as suggested in the documentation
     if (r < 0) {
         fprintf(stderr, "Init Error %d\n", r);
         return -1;
@@ -51,10 +52,16 @@ int8_t bus_init() {
 
     find_device(devs, cnt);
     if (dev) {
-        libusb_open(dev, &handle);
+        r = libusb_open(dev, &handle);
+        if (LIBUSB_SUCCESS != r) {
+            return -1;
+        }
         transfer = libusb_alloc_transfer(0);
         libusb_fill_interrupt_transfer(transfer, handle, 0x88, buffer, sizeof(buffer), libusb_cb, NULL, 0);
-        libusb_submit_transfer(transfer);
+        r = libusb_submit_transfer(transfer);
+        if (LIBUSB_SUCCESS != r) {
+            return -1;
+        }
         busState = UNKNOWN;
     }
 
@@ -88,6 +95,7 @@ struct pollfd *bus_fds(uint8_t *len) {
     uint8_t fdsCnt = 0;
     for (; usbPollFd[fdsCnt] != NULL; fdsCnt++) {}
 
+    // TODO: free
     fds = alloca(sizeof(struct pollfd) * fdsCnt);
     for (int i = 0; i < fdsCnt; i++) {
         fds[i].fd = usbPollFd[i]->fd;
@@ -98,9 +106,13 @@ struct pollfd *bus_fds(uint8_t *len) {
     return fds;
 }
 
+enum BusState bus_state() {
+    return busState;
+}
+
 static void libusb_cb(struct libusb_transfer *_transfer) {
     printf("status: %d\n", _transfer->status);
-    if (_transfer->status == LIBUSB_TRANSFER_CANCELLED) {
+    if (LIBUSB_TRANSFER_CANCELLED == _transfer->status) {
         return;
     }
     printf("Interrupt len: %d", _transfer->actual_length);
@@ -108,18 +120,18 @@ static void libusb_cb(struct libusb_transfer *_transfer) {
     printf(", data: [%d, %d, %d, %d, %d, %d]\n", buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5]);
     printf("\n");
     unsigned char intStatus = _transfer->buffer[4];
-    if (intStatus == 1) {
+    if (1 == intStatus) {
         // сигнал дальнего оповещения
-        assert(busState == UNKNOWN || busState == WAIT_TRAIN && "Unexpected bus state");
+        assert(UNKNOWN == busState || WAIT_TRAIN == busState && "Unexpected bus state");
         busState = TRAIN;
-        trainId++;
-    } else if (intStatus == 0) {
+        trainId = time(NULL);
+    } else if (0 == intStatus) {
         // поезд завершился
-        assert(busState == UNKNOWN || busState == TRAIN && "Unexpected bus state");
+        assert(UNKNOWN == busState || TRAIN == busState && "Unexpected bus state");
         busState = WAIT_TRAIN;
-    } else if (intStatus == 3) {
+    } else if (3 == intStatus) {
         // прошло первое колесо
-        assert(busState == UNKNOWN || busState == TRAIN && "Unexpected bus state");
+        assert(UNKNOWN == busState || TRAIN == busState && "Unexpected bus state");
     } else {
         fprintf(stderr, "Unexpected interrupt status %d", intStatus);
     }
@@ -127,7 +139,7 @@ static void libusb_cb(struct libusb_transfer *_transfer) {
     printf("sret: %d\n", sret);
 }
 
-uint32_t bus_trainId() {
+int64_t bus_trainId() {
     return trainId;
 }
 

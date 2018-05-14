@@ -5,12 +5,16 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-int webcam_init();
+int8_t webcam_init(char *outDir);
 
-struct pollfd* webcam_fds(uint8_t *len);
+struct pollfd webcam_fd();
 
-int webcam_handle_frame(int32_t trainId, bool last);
+int8_t webcam_start_stream(int64_t trainId);
 
-int webcam_close();
+int8_t webcam_handle_frame(int64_t trainId, bool last);
+
+bool webcam_streaming();
+
+void webcam_close();
 
 #endif //LPX_WEBCAM_H

@@ -18,7 +18,7 @@ struct pollfd* bus_fds(uint8_t *len);
 
 enum BusState bus_state();
 
-uint32_t bus_trainId();
+int64_t bus_trainId();
 
 int8_t bus_handle_events();
 
