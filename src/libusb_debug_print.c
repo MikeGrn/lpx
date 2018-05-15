@@ -136,7 +136,7 @@ static void print_configuration(struct libusb_config_descriptor *config) {
         print_interface(&config->interface[i]);
 }
 
-static int print_device(libusb_device *dev) {
+int print_device(libusb_device *dev) {
     struct libusb_device_descriptor desc;
     libusb_device_handle *handle = NULL;
     char description[256];

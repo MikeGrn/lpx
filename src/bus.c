@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include "libusb_debug_print.h"
 
 static const int BUS_VENDOR_ID = 0x0547;
 
@@ -82,6 +83,7 @@ int8_t bus_init() {
             return -1;
         }
         busState = UNKNOWN;
+        print_device(dev);
     }
 
     libusb_free_device_list(devs, 1); //free the list, unref the devices in it
