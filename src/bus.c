@@ -56,7 +56,7 @@ int8_t bus_init() {
     libusb_set_debug(ctx, 4); //set verbosity level to 3, as suggested in the documentation
     // TODO: handle libusb event timeouts
     if (0 == libusb_pollfds_handle_timeouts(ctx)) {
-        printf("Shuold handle libusb event timeouts\n");
+        printf("Should handle libusb event timeouts\n");
         return -1;
     }
     cnt = libusb_get_device_list(ctx, &devs); //get the list of devices
@@ -67,10 +67,13 @@ int8_t bus_init() {
 
     find_device(devs, cnt);
     if (dev) {
+        printf("Device found open it\n");
         r = libusb_open(dev, &handle);
         if (LIBUSB_SUCCESS != r) {
             return -1;
         }
+        r = libusb_kernel_driver_active(handle, 0);
+        printf("Kernel driver active: %d\n", r);
         r = libusb_claim_interface(handle, 0);
         if (LIBUSB_SUCCESS != r) {
             perror("claim usb interface");
@@ -89,7 +92,7 @@ int8_t bus_init() {
             return -1;
         }
         busState = UNKNOWN;
-        print_device(dev);
+        //print_device(dev);
     }
 
     libusb_free_device_list(devs, 1); //free the list, unref the devices in it
