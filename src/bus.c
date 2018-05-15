@@ -125,8 +125,7 @@ struct pollfd *bus_fds(uint8_t *len) {
     uint8_t fdsCnt = 0;
     for (; usbPollFd[fdsCnt] != NULL; fdsCnt++) {}
 
-    // TODO: free
-    fds = alloca(sizeof(struct pollfd) * fdsCnt);
+    fds = calloc(fdsCnt, sizeof(struct pollfd));
     for (int i = 0; i < fdsCnt; i++) {
         fds[i].fd = usbPollFd[i]->fd;
         fds[i].events = usbPollFd[i]->events;
