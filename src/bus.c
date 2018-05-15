@@ -173,7 +173,7 @@ int64_t bus_trainId() {
 }
 
 int8_t bus_handle_events() {
-    libusb_handle_events_timeout(ctx, &NO_TIMEOUT);
+    return (int8_t) libusb_handle_events_timeout(ctx, &NO_TIMEOUT);
 }
 
 void bus_close() {
