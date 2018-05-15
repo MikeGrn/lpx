@@ -34,14 +34,28 @@ static void find_device(libusb_device *const *devs, ssize_t cnt);
 
 static void libusb_cb(struct libusb_transfer *_transfer);
 
+static void poll_fd_added(int fd, short events, void *user_data) {
+    printf("libusb poll fd added: %d, %d\n", fd, events);
+}
+
+static void poll_fd_removed(int fd, void *user_data) {
+    printf("libusb poll fd removed: %d\n", fd);
+}
+
 int8_t bus_init() {
     libusb_device **devs; //pointer to pointer of device, used to retrieve a list of devices
     int r; //for return values
     ssize_t cnt; //holding number of devices in list
     r = libusb_init(&ctx); //initialize a library session
-    libusb_set_debug(ctx, 3); //set verbosity level to 3, as suggested in the documentation
     if (r < 0) {
         fprintf(stderr, "Init Error %d\n", r);
+        return -1;
+    }
+    libusb_set_pollfd_notifiers(ctx, poll_fd_added, poll_fd_removed, NULL);
+    libusb_set_debug(ctx, 4); //set verbosity level to 3, as suggested in the documentation
+    // TODO: handle libusb event timeouts
+    if (0 == libusb_pollfds_handle_timeouts(ctx)) {
+        printf("Shuold handle libusb event timeouts\n");
         return -1;
     }
     cnt = libusb_get_device_list(ctx, &devs); //get the list of devices
@@ -57,8 +71,13 @@ int8_t bus_init() {
             return -1;
         }
         transfer = libusb_alloc_transfer(0);
+        if (!transfer) {
+            printf("could not allocate transfer\n");
+            return -1;
+        }
         libusb_fill_interrupt_transfer(transfer, handle, 0x88, buffer, sizeof(buffer), libusb_cb, NULL, 0);
         r = libusb_submit_transfer(transfer);
+        printf("transfer submitted\n");
         if (LIBUSB_SUCCESS != r) {
             return -1;
         }

@@ -68,10 +68,16 @@ int main() {
                         webcam_start_stream(bus_trainId());
                     }
                     break;
+                } else if (fds[i].revents == POLLERR) {
+                    printf("Disable %d(%d) libusb poll fd\n", fds[i].fd, fds[i].events);
+                    perror("libusb poll error");
+                    fds[i].fd = -fds[i].fd;
+                    break;
                 }
             }
             if (POLLIN == fds[WEBCAM].revents) {
                 webcam_handle_frame(bus_trainId(), bus_state() == WAIT_TRAIN);
+                // TODO: удалить стрим
             }
             if (POLLERR == fds[WEBCAM].revents) {
                 perror("webcam error");
