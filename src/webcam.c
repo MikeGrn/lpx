@@ -12,10 +12,13 @@
 #include <poll.h>
 #include <stdbool.h>
 #include <assert.h>
+#include "lpxstd.h"
 
 static char *outDir;
 
 static int outFd;
+
+static int outIdxFd;
 
 static int webcamFd;
 
@@ -26,6 +29,12 @@ static struct v4l2_buffer bufferinfo = {0};
 static uint8_t *buffer;
 
 static bool streaming = false;
+
+static struct timeval frameRequestTime;
+
+static struct timeval frameReadyTime;
+
+static uint32_t frameOffset;
 
 int8_t webcam_init(char *_outDir) {
     outDir = _outDir;
@@ -93,9 +102,15 @@ int8_t webcam_start_stream(int64_t trainId) {
     char buf[256];
     sprintf(buf, "%s/%ld.mjpeg", outDir, trainId);
     if ((outFd = open(buf, O_WRONLY | O_CREAT, 0660)) < 0) {
-        perror("open");
+        perror("open stream file");
         return -1;
     }
+    sprintf(buf, "%s/%ld.idx", outDir, trainId);
+    if ((outIdxFd = open(buf, O_WRONLY | O_CREAT, 0660)) < 0) {
+        perror("open index file");
+        return -1;
+    }
+    frameOffset = 0;
 
     if (-1 == ioctl(webcamFd, VIDIOC_STREAMON, &bufferinfo.type)) {
         perror("Start Capture");
@@ -106,11 +121,13 @@ int8_t webcam_start_stream(int64_t trainId) {
         perror("VIDIOC_QBUF");
         return -1;
     }
+    gettimeofday(&frameRequestTime, NULL);
     streaming = true;
 }
 
 
 int8_t webcam_handle_frame(int64_t trainId, bool last) {
+    gettimeofday(&frameReadyTime, NULL);
     printf("handling frame\n");
 
     assert(streaming && "Handle frame while not streaming");
@@ -119,7 +136,9 @@ int8_t webcam_handle_frame(int64_t trainId, bool last) {
         perror("Retrieving Frame");
         return -1;
     }
+    dprintf(outIdxFd, "%d,%d,%ld,%ld\n", frameOffset, bufferinfo.length, toMicroSeconds(frameRequestTime), toMicroSeconds(frameReadyTime));
     write(outFd, buffer, bufferinfo.length);
+    frameOffset += bufferinfo.length;
 
     if (last) {
         printf("stopping stream\n");
@@ -129,11 +148,15 @@ int8_t webcam_handle_frame(int64_t trainId, bool last) {
         }
         close(outFd);
         outFd = 0;
+        close(outIdxFd);
+        outIdxFd = 0;
         streaming = false;
     } else {
         if (ioctl(webcamFd, VIDIOC_QBUF, &bufferinfo) < 0) {
             perror("VIDIOC_QBUF");
             return -1;
+        } else {
+            gettimeofday(&frameRequestTime, NULL);
         }
     }
 }
@@ -155,91 +178,3 @@ void webcam_close() {
         close(webcamFd);
     }
 }
-/*
-
-int main(int argc, char *argv[]) {
-
-
-    unlink(OUT_FILE);
-    int jpgfile;
-    if ((jpgfile = open(OUT_FILE, O_WRONLY | O_CREAT, 0660)) < 0) {
-        perror("open");
-        exit(1);
-    }
-
-    long deadline = time(NULL) + 5;
-    int frame = 0;
-    while (time(NULL) < deadline) {
-
-        struct timeval stop, start;
-        gettimeofday(&start, NULL);
-        if (ioctl(webcamFd, VIDIOC_QBUF, &bufferinfo) < 0) {
-            perror("VIDIOC_QBUF");
-            exit(1);
-        }
-        gettimeofday(&stop, NULL);
-        printf("q time: %ld\n", stop.tv_usec - start.tv_usec);
-
-        fd_set fds;
-        struct timeval tv;
-        int r;
-
-        FD_ZERO(&fds);
-        FD_SET(webcamFd, &fds);
-
-        */
-/* Timeout. *//*
-
-        tv.tv_sec = 2;
-        tv.tv_usec = 0;
-
-        gettimeofday(&start, NULL);
-        r = poll(&pfd, 1, -1);
-        gettimeofday(&stop, NULL);
-        printf("select time: %ld\n", stop.tv_usec - start.tv_usec);
-
-        if (-1 == r) {
-            if (EINTR == errno)
-                continue;
-            exit(EXIT_FAILURE);
-        }
-
-        if (0 == r) {
-            fprintf(stderr, "select timeout\\n");
-            exit(EXIT_FAILURE);
-        }
-
-
-        gettimeofday(&start, NULL);
-        if (-1 == ioctl(webcamFd, VIDIOC_DQBUF, &bufferinfo)) {
-            perror("Retrieving Frame");
-            return 1;
-        }
-        gettimeofday(&stop, NULL);
-        printf("qd time: %ld\n", stop.tv_usec - start.tv_usec);
-        printf("bi.seq: %d, .offset: %d, .bytesused: %d, .ts: %ld, .tc.frames: %d, .tc.seconds: %d\n",
-               bufferinfo.sequence, bufferinfo.m.offset, bufferinfo.bytesused, bufferinfo.timestamp.tv_sec,
-               bufferinfo.timecode.frames, bufferinfo.timecode.seconds);
-
-        gettimeofday(&start, NULL);
-        write(jpgfile, buffer, bufferinfo.length);
-        gettimeofday(&stop, NULL);
-        printf("write time: %ld\n", stop.tv_usec - start.tv_usec);
-        frame++;
-        printf("frame %d written, time: %ld\n", frame, time(NULL));
-    }
-
-    if (ioctl(webcamFd, VIDIOC_STREAMOFF, &bufferinfo.type) < 0) {
-        perror("VIDIOC_STREAMOFF");
-        exit(1);
-    }
-
-    close(webcamFd);
-
-
-    close(jpgfile);
-
-    printf("done\n");
-    return EXIT_SUCCESS;
-}
-*/
