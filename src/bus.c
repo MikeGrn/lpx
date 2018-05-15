@@ -71,6 +71,12 @@ int8_t bus_init() {
         if (LIBUSB_SUCCESS != r) {
             return -1;
         }
+        r = libusb_claim_interface(handle, 0);
+        if (LIBUSB_SUCCESS != r) {
+            perror("claim usb interface");
+            printf("Could not claim interface\n");
+            return -1;
+        }
         transfer = libusb_alloc_transfer(0);
         if (!transfer) {
             printf("could not allocate transfer\n");
@@ -181,6 +187,7 @@ void bus_close() {
         libusb_free_pollfds(usbPollFd);
     }
     if (handle) {
+        libusb_release_interface(handle, 0);
         libusb_close(handle);
     }
     libusb_exit(ctx);
