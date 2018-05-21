@@ -59,13 +59,15 @@ int main() {
         if (r > 0) {
             for (int i = BUS; i < BUS + busFdsCnt; i++) {
                 if (fds[i].revents == fds[i].events) {
-                    // todo: засирает busFds - надо разобраться почему
+                    // todo: засирает busFds - надо разобраться почему (может из-за бага с alloca-ом busFds?)
                     enum BusState prevState = bus_state();
                     r = bus_handle_events();
                     assert(0 == r); // TODO
                     enum BusState curState = bus_state();
                     if (prevState != curState && curState == TRAIN) {
                         webcam_start_stream(bus_trainId());
+                    } else if (prevState != curState && curState == WAIT_TRAIN) {
+                        bus_request_state();
                     }
                     break;
                 } else if (fds[i].revents == POLLERR) {
