@@ -39,7 +39,7 @@ static void find_device(libusb_device *const *devs, ssize_t cnt);
 
 static void libusb_interrupt_cb(struct libusb_transfer *_transfer);
 
-static int8_t bus_send_request(unsigned char *req, uint8_t reqlen) ;
+static int8_t bus_send_request(unsigned char *req, uint8_t reqlen);
 
 static void poll_fd_added(int fd, short events, void *user_data) {
     printf("libusb poll fd added: %d, %d\n", fd, events);
@@ -178,6 +178,16 @@ int64_t bus_trainId() {
     return trainId;
 }
 
+int8_t bus_read_response(void *res, int8_t reslen) {
+    int len = 0;
+    int r = libusb_bulk_transfer(handle, 0x86, res, reslen, &len, 0);
+    if (LIBUSB_SUCCESS != r || reslen != len) {
+        return -1;
+    }
+    printArray("Rx", res, reslen);
+    return 0;
+}
+
 /**
  * Работает в блокируещем режиме
  */
@@ -187,43 +197,36 @@ int8_t bus_request_state() {
     outbuf[0] = 0x23;
     outbuf[1] = 0;
     outbuf[2] = (unsigned char) (stateSize / 2);
+    struct TMsbState state;
+    int r = bus_send_request((unsigned char[3]) {0x23, 0, sizeof(state) / 2}, 3);
+    if (LIBUSB_SUCCESS != r) {
+        return -1;
+    }
+    r = bus_read_response(&state, sizeof(state));
+    if (LIBUSB_SUCCESS != r) {
+        return -1;
+    }
+    assert(MARKER == state.marker && "Unexpected marker");
     int len = 0;
-    int r = bus_send_request((unsigned char[3]){0x23, 0, sizeof(struct TMsbState) / 2}, 3);
-    if (LIBUSB_SUCCESS != r) {
-        return -1;
-    }
-    unsigned char stateBuf[stateSize];
-    int inlen = 0;
-    r = libusb_bulk_transfer(handle, 0x86, stateBuf, sizeof(stateBuf), &inlen, 0);
-    if (LIBUSB_SUCCESS != r) {
-        return -1;
-    }
-    struct TMsbState *state = (struct TMsbState *) stateBuf;
-    // TODO: костыль на то, что почему-то БУС иногда перемежает ответ нулями. Надо разобраться
-    if (state->marker != MARKER) {
-        for (int i = 0, j = 0; i < inlen; i += 2, j++) {
-            stateBuf[j] = stateBuf[i];
-        }
-    }
-    uint8_t trainSize = sizeof(struct TMsbTrainHdr) / sizeof(uint32_t);
+    uint32_t trainSize = sizeof(struct TMsbTrainHdr) / sizeof(uint32_t);
     outbuf[0] = 0x24;
     outbuf[1] = 0;
 
-    outbuf[2] = state->lastTrain & 0xFF;
-    outbuf[3] = (state->lastTrain >> 8) & 0xFF;
-    outbuf[4] = (state->lastTrain >> 16) & 0xFF;
-    outbuf[5] = (state->lastTrain >> 24);
+    outbuf[2] = (unsigned char) (state.lastTrain & 0xFFu);
+    outbuf[3] = (unsigned char) ((state.lastTrain >> 8u) & 0xFFu);
+    outbuf[4] = (unsigned char) ((state.lastTrain >> 16u) & 0xFFu);
+    outbuf[5] = (unsigned char) (state.lastTrain >> 24u);
 
-    outbuf[6] = trainSize & 0xFF;
-    outbuf[7] = (trainSize >> 8) & 0xFF;
-    outbuf[8] = (trainSize >> 16) & 0xFF;
-    outbuf[9] = (trainSize >> 24);
+    outbuf[6] = (unsigned char) (trainSize & 0xFFu);
+    outbuf[7] = (unsigned char) ((trainSize >> 8u) & 0xFFu);
+    outbuf[8] = (unsigned char) ((trainSize >> 16u) & 0xFFu);
+    outbuf[9] = (unsigned char) (trainSize >> 24u);
 
     r = libusb_bulk_transfer(handle, 0x2, (unsigned char *) &outbuf, sizeof(outbuf), &len, 0);
     printf("1 bulk transfer len: %d, r: %d\n", len, r);
     unsigned char trainBuf[trainSize * sizeof(uint32_t)];
     memset(trainBuf, 0, sizeof(trainBuf));
-    inlen = 0;
+    int inlen = 0;
     printf("sending read bulk transfer\n");
     r = libusb_bulk_transfer(handle, 0x86, trainBuf, sizeof(trainBuf), &inlen, 0);
     printf("res: %d, inlen: %d\n", r, inlen);
@@ -276,7 +279,7 @@ int8_t bus_request_state() {
 
 static int8_t bus_send_request(unsigned char *req, uint8_t reqlen) {
     int len = 0;
-    int r = libusb_bulk_transfer(handle, 0x2, req, sizeof(reqlen), &len, 0);
+    int r = libusb_bulk_transfer(handle, 0x2, req, reqlen, &len, 0);
     if (LIBUSB_SUCCESS != r || len != reqlen) {
         return -1;
     }
