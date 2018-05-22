@@ -4,10 +4,13 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <memory.h>
+#include <stdbool.h>
 #include "libusb_debug_print.h"
 #include "lpxstd.h"
 
-const uint16_t MARKER = 0xA55A;
+const uint16_t STATE_MARKER = 0xA55A;
+
+const uint16_t TRAIN_MARKER = 0xA5A5;
 
 static const int BUS_VENDOR_ID = 0x0547;
 
@@ -38,8 +41,6 @@ static int64_t trainId = 0;
 static void find_device(libusb_device *const *devs, ssize_t cnt);
 
 static void libusb_interrupt_cb(struct libusb_transfer *_transfer);
-
-static int8_t bus_send_request(unsigned char *req, uint8_t reqlen);
 
 static void poll_fd_added(int fd, short events, void *user_data) {
     printf("libusb poll fd added: %d, %d\n", fd, events);
@@ -178,134 +179,122 @@ int64_t bus_trainId() {
     return trainId;
 }
 
-static int8_t bus_send_request(unsigned char *req, uint8_t reqlen) {
+// По пока не раскопаной причине, БУС отвечает то нормально, то с нулём в каждом втором байте
+// поэтому запрашивается в два раз больше данных чем надо, затем проверяется маркер (если есть)
+// или значения чётных байт и в случае наличия пустых байт они выбрасываются
+static int8_t bus_read_response_with_hack(void *const buf, uint32_t bufLen, uint16_t marker) {
+    uint32_t respLen = bufLen * 2u;
+    unsigned char resp[respLen];
+    memset(resp, 0, respLen);
     int len = 0;
-    int r = libusb_bulk_transfer(handle, 0x2, req, reqlen, &len, 0);
-    if (LIBUSB_SUCCESS != r || len != reqlen) {
+    int r = libusb_bulk_transfer(handle, 0x86, resp, respLen, &len, 0);
+    printArray("Rx: ", resp, len);
+    if (LIBUSB_SUCCESS != r || len != respLen) {
         return -1;
     }
-    return 0;
-}
+    bool hasNulls;
+    if (marker != 0 && ((uint16_t) *resp) == marker) {
+        hasNulls = false;
+    } else {
+        hasNulls = true;
+        for (int i = 1; i < respLen; i += 2) {
+            if (resp[i] != 0) {
+                hasNulls = false;
+                break;
+            }
+        }
+    }
 
-static int8_t bus_read_response(void *res, int32_t reslen) {
-    int32_t len = 0;
-    int r = libusb_bulk_transfer(handle, 0x86, res, reslen, &len, 0);
-    if (LIBUSB_SUCCESS != r || reslen != len) {
-        return -1;
-    }
-    printArray("Rx: ", res, reslen);
-    return 0;
-}
-
-static int8_t bus_get_state(struct TMsbState *const state) {
-    uint8_t stateSize = sizeof(struct TMsbState);
-    int32_t respSize = stateSize * 2;
-    unsigned char stateBuf[respSize];
-    int r = bus_send_request((unsigned char[3]) {0x23, 0, stateSize}, 3);
-    if (LIBUSB_SUCCESS != r) {
-        return -1;
-    }
-    r = bus_read_response(stateBuf, respSize);
-    if (LIBUSB_SUCCESS != r) {
-        return -1;
-    }
-    // По непонятной причине в ответ на запрос регистров БУС возвращает ответ в котором каждый второй байт равен нулю
-    unsigned char *statePtr = (unsigned char *) state;
-    if (((struct TMsbState *) stateBuf)->marker != MARKER) {
-        for (int i = 0, j = 0; i < respSize; i += 2, j++) {
-            statePtr[j] = stateBuf[i];
+    if (hasNulls) {
+        printf("removing nulls from response\n");
+        unsigned char *bufPtr = (unsigned char *) buf;
+        for (int i = 0, j = 0; i < respLen; i += 2, j++) {
+            bufPtr[j] = resp[i];
         }
     } else {
-        memcpy(state, stateBuf, stateSize);
+        memcpy(buf, &resp, bufLen);
     }
-    assert(MARKER == state->marker && "Unexpected bus state marker");
+    printArray("buf: ", buf, bufLen);
     return 0;
 }
 
-static int8_t bus_read_train_header(struct TMsbTrainHdr const *hdr, uint32_t trainAddr) {
-#define reqSize 10
-    unsigned char req[reqSize] = {0};
+static int32_t bus_read_fpga(struct TMsbState *const state) {
+    unsigned char req[3] = {0};
+    req[0] = 0x23;
+    req[1] = 0;
+    req[2] = sizeof(struct TMsbState); // TODO: запрашиваем в 2 раза больше данных чем надо см. bus_read_response_with_hack
+    int len = 0;
+    int32_t r = libusb_bulk_transfer(handle, 0x2, req, sizeof(req), &len, 0);
+    if (LIBUSB_SUCCESS != r || len != sizeof(req)) {
+        return -1;
+    }
+    r = bus_read_response_with_hack(state, sizeof(struct TMsbState), STATE_MARKER);
+    assert(STATE_MARKER == state->marker && "Unexpected state marker");
+    return r;
+}
+
+static int32_t bus_read_train_data(void *const buf, uint32_t bufLen, int32_t addr, uint16_t marker) {
+    unsigned char req[10] = {0};
     req[0] = 0x24;
-    memcpy(&(req[2]), &trainAddr, sizeof(uint32_t));
-    const size_t trainSize = sizeof(struct TMsbTrainHdr);
-    uint32_t trainSizeDWords = trainSize / sizeof(uint32_t);
+    memcpy(&(req[2]), &addr, sizeof(uint32_t));
+    uint32_t trainSizeDWords = bufLen / sizeof(uint32_t) *
+                               2; // TODO: запрашиваем в 2 раза больше данных чем надо см. bus_read_response_with_hack
     memcpy(&(req[6]), &trainSizeDWords, sizeof(uint32_t));
 
     int len;
-    int r = libusb_bulk_transfer(handle, 0x2, (unsigned char *) &req, reqSize, &len, 0);
-    if (LIBUSB_SUCCESS != r || len != reqSize) {
+    int r = libusb_bulk_transfer(handle, 0x2, (unsigned char *) &req, sizeof(req), &len, 0);
+    if (LIBUSB_SUCCESS != r || len != sizeof(req)) {
         return -1;
+    }
+    r = bus_read_response_with_hack(buf, bufLen, marker);
+    return r;
+}
+
+uint32_t bus_axle_avg_time(struct TMsbWheelTime axleTime) {
+    uint32_t *arr = (uint32_t *) &(axleTime);
+    uint8_t items = 0;
+    uint64_t sum = 0;
+    for (int j = 0; j < 6; j++) {
+        sum += arr[j];
+        items += arr[j] > 0 ? 1 :0;
     }
 
-    r = libusb_bulk_transfer(handle, 0x86, (unsigned char *) hdr, trainSize, &len, 0);
-    if (LIBUSB_SUCCESS != r || len != trainSize) {
-        return -1;
-    }
-    printArray("Rx: ", (unsigned char *) hdr, len);
-    assert(0xA5A5 == hdr->marker && "Unexpected train header marker");
-    return 0;
+    return (uint32_t) (sum / items);
 }
 
 /**
  * Работает в блокируещем режиме
  */
-int8_t bus_last_train_wheel_time_offsets() {
+int8_t bus_last_train_wheel_time_offsets(uint32_t **timeOffsets, uint32_t *len) {
     struct TMsbState state = {0};
-    int r = bus_get_state(&state);
+    int r = bus_read_fpga(&state);
     if (LIBUSB_SUCCESS != r) {
         return -1;
     }
 
     struct TMsbTrainHdr hdr = {0};
-    r = bus_read_train_header(&hdr, state.lastTrain);
+    r = bus_read_train_data(&hdr, sizeof(hdr), state.lastTrain, TRAIN_MARKER);
     if (r != LIBUSB_SUCCESS) {
         return -1;
     }
-    printf("hdr.marker: %d (%2X)\n", hdr.marker, hdr.marker);
-    printf("hdr.numberOfWheels: %d\n", hdr.numberOfWheels);
-    printf("hdr.timeStart: %d \n", hdr.timeStart);
-    printf("hdr.timeStop: %d \n", hdr.timeStop);
-    printf("hdr.timeFirstWheel: %d \n", hdr.timeFirstWheel);
-    printf("hdr.trFirstSignalTime: %d \n", hdr.trFirstSignalTime);
+    assert(TRAIN_MARKER == hdr.marker && "Unexpected train marker");
 
-    unsigned char outbuf[10];
-    int len = 0;
-    outbuf[2] = hdr.thisTrainData & 0xFF;
-    outbuf[3] = (hdr.thisTrainData >> 8) & 0xFF;
-    outbuf[4] = (hdr.thisTrainData >> 16) & 0xFF;
-    outbuf[5] = (hdr.thisTrainData >> 24);
-
-    int wheelsSize = sizeof(struct TMsbWheelTime) * hdr.numberOfWheels / sizeof(uint32_t);
-    outbuf[6] = wheelsSize & 0xFF;
-    outbuf[7] = (wheelsSize >> 8) & 0xFF;
-    outbuf[8] = (wheelsSize >> 16) & 0xFF;
-    outbuf[9] = (wheelsSize >> 24);
-
-    r = libusb_bulk_transfer(handle, 0x2, (unsigned char *) &outbuf, sizeof(outbuf), &len, 0);
-    unsigned char wheelsBuf[wheelsSize * sizeof(uint32_t)];
-    int inlen = 0;
-    r = libusb_bulk_transfer(handle, 0x86, wheelsBuf, sizeof(wheelsBuf), &inlen, 0);
-    printArray("wheels data: ", wheelsBuf, inlen);
-    uint32_t *time = (uint32_t *) &wheelsBuf;
-    uint32_t baseTimeOffsetMks = s2mks(hdr.timeFirstWheel - hdr.timeStart);
-    // todo: free
-    uint32_t *wheelTimes = malloc(sizeof(uint32_t) * hdr.numberOfWheels);
-    for (int i = 0; i < hdr.numberOfWheels * 6; i += 6) {
-        uint64_t sum = 0;
-        uint8_t items = 0;
-        for (int j = 0; j < 6; j++) {
-            printf("%d ", *time);
-            if (*time > 0) {
-                items++;
-            }
-            sum += *time;
-            time++;
-        }
-        wheelTimes[i / 6] = (uint32_t) (baseTimeOffsetMks + sum / items);
-        printf("%d \n", wheelTimes[i / 6]);
+    struct TMsbWheelTime wheelTimes[hdr.numberOfWheels];
+    memset(&wheelTimes, 0, sizeof(struct TMsbWheelTime) * hdr.numberOfWheels);
+    r = bus_read_train_data(&wheelTimes, sizeof(struct TMsbWheelTime) * hdr.numberOfWheels, hdr.thisTrainData, 0);
+    if (r != LIBUSB_SUCCESS) {
+        return -1;
     }
 
-    printf("\n");
+    uint32_t baseTimeOffsetMks = s2mks(hdr.timeFirstWheel - hdr.timeStart);
+
+    uint32_t *wheelOffsets = malloc(sizeof(uint32_t) * hdr.numberOfWheels);
+    for (int i = 0; i < hdr.numberOfWheels; i++) {
+        wheelOffsets[i] = baseTimeOffsetMks + bus_axle_avg_time(wheelTimes[i]);
+    }
+    *timeOffsets = wheelOffsets;
+    *len = hdr.numberOfWheels;
+
     return 0;
 }
 

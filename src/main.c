@@ -81,8 +81,16 @@ int main() {
                 webcam_handle_frame(bus_trainId(), WAIT_TRAIN == bus_state());
                 // TODO: вынести обработку поезда в отдельный поток
                 if (WAIT_TRAIN == bus_state()) {
-                    r = bus_last_train_wheel_time_offsets();
+                    // TODO: освободить офсеты
+                    uint32_t *timeOffsets = NULL;
+                    uint32_t timeOffsetsLen = 0;
+                    r = bus_last_train_wheel_time_offsets(&timeOffsets, &timeOffsetsLen);
                     assert(0 == r);
+                    printf("timeOffsetsLen: %d\n", timeOffsetsLen);
+                    for (int i = 0; i < timeOffsetsLen; i++) {
+                        printf("%d ", timeOffsets[i]);
+                    }
+                    printf("\n");
                 }
                 // TODO: удалить стрим
             }

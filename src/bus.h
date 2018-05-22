@@ -20,13 +20,13 @@ enum BusState bus_state();
 
 int64_t bus_trainId();
 
-int8_t bus_last_train_wheel_time_offsets();
+int8_t bus_last_train_wheel_time_offsets(uint32_t **timeOffsets, uint32_t *len);
 
 int8_t bus_handle_events();
 
 void bus_close();
 
-const uint16_t MARKER;
+const uint16_t STATE_MARKER;
 
 struct TMsbState {                // XX - hex смещение в словах (uint16_t)
     uint16_t marker;                 // 0x00 0xA55A маркер начала структуры данных. (R/O)
