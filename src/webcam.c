@@ -127,8 +127,10 @@ int8_t webcam_start_stream(int64_t trainId) {
 
 
 int8_t webcam_handle_frame(int64_t trainId, bool last) {
+    if (0 == frameOffset) {
+        printf("Has got first frame\n");
+    }
     gettimeofday(&frameReadyTime, NULL);
-    printf("handling frame\n");
 
     assert(streaming && "Handle frame while not streaming");
 

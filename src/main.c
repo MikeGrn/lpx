@@ -55,7 +55,9 @@ int main() {
         }
         r = poll(fds, ALEN(fds), -1);
         assert(r >= 0); // TODO
-        printf("pret: %d\n", r);
+        if (r <= 0) {
+            printf("pret: %d\n", r);
+        }
         if (r > 0) {
             for (int i = BUS; i < BUS + busFdsCnt; i++) {
                 if (fds[i].revents == fds[i].events) {
@@ -79,7 +81,8 @@ int main() {
                 webcam_handle_frame(bus_trainId(), WAIT_TRAIN == bus_state());
                 // TODO: вынести обработку поезда в отдельный поток
                 if (WAIT_TRAIN == bus_state()) {
-                    bus_request_state();
+                    r = bus_last_train_wheel_time_offsets();
+                    assert(0 == r);
                 }
                 // TODO: удалить стрим
             }

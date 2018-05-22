@@ -178,72 +178,104 @@ int64_t bus_trainId() {
     return trainId;
 }
 
-int8_t bus_read_response(void *res, int8_t reslen) {
+static int8_t bus_send_request(unsigned char *req, uint8_t reqlen) {
     int len = 0;
+    int r = libusb_bulk_transfer(handle, 0x2, req, reqlen, &len, 0);
+    if (LIBUSB_SUCCESS != r || len != reqlen) {
+        return -1;
+    }
+    return 0;
+}
+
+static int8_t bus_read_response(void *res, int32_t reslen) {
+    int32_t len = 0;
     int r = libusb_bulk_transfer(handle, 0x86, res, reslen, &len, 0);
     if (LIBUSB_SUCCESS != r || reslen != len) {
         return -1;
     }
-    printArray("Rx", res, reslen);
+    printArray("Rx: ", res, reslen);
+    return 0;
+}
+
+static int8_t bus_get_state(struct TMsbState *const state) {
+    uint8_t stateSize = sizeof(struct TMsbState);
+    int32_t respSize = stateSize * 2;
+    unsigned char stateBuf[respSize];
+    int r = bus_send_request((unsigned char[3]) {0x23, 0, stateSize}, 3);
+    if (LIBUSB_SUCCESS != r) {
+        return -1;
+    }
+    r = bus_read_response(stateBuf, respSize);
+    if (LIBUSB_SUCCESS != r) {
+        return -1;
+    }
+    // По непонятной причине в ответ на запрос регистров БУС возвращает ответ в котором каждый второй байт равен нулю
+    unsigned char *statePtr = (unsigned char *) state;
+    if (((struct TMsbState *) stateBuf)->marker != MARKER) {
+        for (int i = 0, j = 0; i < respSize; i += 2, j++) {
+            statePtr[j] = stateBuf[i];
+        }
+    } else {
+        memcpy(state, stateBuf, stateSize);
+    }
+    assert(MARKER == state->marker && "Unexpected bus state marker");
+    return 0;
+}
+
+static int8_t bus_read_train_header(struct TMsbTrainHdr const *hdr, uint32_t trainAddr) {
+#define reqSize 10
+    unsigned char req[reqSize] = {0};
+    req[0] = 0x24;
+    memcpy(&(req[2]), &trainAddr, sizeof(uint32_t));
+    const size_t trainSize = sizeof(struct TMsbTrainHdr);
+    uint32_t trainSizeDWords = trainSize / sizeof(uint32_t);
+    memcpy(&(req[6]), &trainSizeDWords, sizeof(uint32_t));
+
+    int len;
+    int r = libusb_bulk_transfer(handle, 0x2, (unsigned char *) &req, reqSize, &len, 0);
+    if (LIBUSB_SUCCESS != r || len != reqSize) {
+        return -1;
+    }
+
+    r = libusb_bulk_transfer(handle, 0x86, (unsigned char *) hdr, trainSize, &len, 0);
+    if (LIBUSB_SUCCESS != r || len != trainSize) {
+        return -1;
+    }
+    printArray("Rx: ", (unsigned char *) hdr, len);
+    assert(0xA5A5 == hdr->marker && "Unexpected train header marker");
     return 0;
 }
 
 /**
  * Работает в блокируещем режиме
  */
-int8_t bus_request_state() {
-    uint8_t stateSize = sizeof(struct TMsbState);
+int8_t bus_last_train_wheel_time_offsets() {
+    struct TMsbState state = {0};
+    int r = bus_get_state(&state);
+    if (LIBUSB_SUCCESS != r) {
+        return -1;
+    }
+
+    struct TMsbTrainHdr hdr = {0};
+    r = bus_read_train_header(&hdr, state.lastTrain);
+    if (r != LIBUSB_SUCCESS) {
+        return -1;
+    }
+    printf("hdr.marker: %d (%2X)\n", hdr.marker, hdr.marker);
+    printf("hdr.numberOfWheels: %d\n", hdr.numberOfWheels);
+    printf("hdr.timeStart: %d \n", hdr.timeStart);
+    printf("hdr.timeStop: %d \n", hdr.timeStop);
+    printf("hdr.timeFirstWheel: %d \n", hdr.timeFirstWheel);
+    printf("hdr.trFirstSignalTime: %d \n", hdr.trFirstSignalTime);
+
     unsigned char outbuf[10];
-    outbuf[0] = 0x23;
-    outbuf[1] = 0;
-    outbuf[2] = (unsigned char) (stateSize / 2);
-    struct TMsbState state;
-    int r = bus_send_request((unsigned char[3]) {0x23, 0, sizeof(state) / 2}, 3);
-    if (LIBUSB_SUCCESS != r) {
-        return -1;
-    }
-    r = bus_read_response(&state, sizeof(state));
-    if (LIBUSB_SUCCESS != r) {
-        return -1;
-    }
-    assert(MARKER == state.marker && "Unexpected marker");
     int len = 0;
-    uint32_t trainSize = sizeof(struct TMsbTrainHdr) / sizeof(uint32_t);
-    outbuf[0] = 0x24;
-    outbuf[1] = 0;
+    outbuf[2] = hdr.thisTrainData & 0xFF;
+    outbuf[3] = (hdr.thisTrainData >> 8) & 0xFF;
+    outbuf[4] = (hdr.thisTrainData >> 16) & 0xFF;
+    outbuf[5] = (hdr.thisTrainData >> 24);
 
-    outbuf[2] = (unsigned char) (state.lastTrain & 0xFFu);
-    outbuf[3] = (unsigned char) ((state.lastTrain >> 8u) & 0xFFu);
-    outbuf[4] = (unsigned char) ((state.lastTrain >> 16u) & 0xFFu);
-    outbuf[5] = (unsigned char) (state.lastTrain >> 24u);
-
-    outbuf[6] = (unsigned char) (trainSize & 0xFFu);
-    outbuf[7] = (unsigned char) ((trainSize >> 8u) & 0xFFu);
-    outbuf[8] = (unsigned char) ((trainSize >> 16u) & 0xFFu);
-    outbuf[9] = (unsigned char) (trainSize >> 24u);
-
-    r = libusb_bulk_transfer(handle, 0x2, (unsigned char *) &outbuf, sizeof(outbuf), &len, 0);
-    printf("1 bulk transfer len: %d, r: %d\n", len, r);
-    unsigned char trainBuf[trainSize * sizeof(uint32_t)];
-    memset(trainBuf, 0, sizeof(trainBuf));
-    int inlen = 0;
-    printf("sending read bulk transfer\n");
-    r = libusb_bulk_transfer(handle, 0x86, trainBuf, sizeof(trainBuf), &inlen, 0);
-    printf("res: %d, inlen: %d\n", r, inlen);
-    printArray("train data: ", trainBuf, inlen);
-    struct TMsbTrainHdr *hdr = (struct TMsbTrainHdr *) &trainBuf;
-    printf("hdr.marker: %d (%2X)\n", hdr->marker, hdr->marker);
-    printf("hdr.numberOfWheels: %d\n", hdr->numberOfWheels);
-    printf("hdr.timeStart: %d \n", hdr->timeStart);
-    printf("hdr.timeStop: %d \n", hdr->timeStop);
-    printf("hdr.timeFirstWheel: %d \n", hdr->timeFirstWheel);
-    printf("hdr.trFirstSignalTime: %d \n", hdr->trFirstSignalTime);
-    outbuf[2] = hdr->thisTrainData & 0xFF;
-    outbuf[3] = (hdr->thisTrainData >> 8) & 0xFF;
-    outbuf[4] = (hdr->thisTrainData >> 16) & 0xFF;
-    outbuf[5] = (hdr->thisTrainData >> 24);
-
-    int wheelsSize = sizeof(struct TMsbWheelTime) * hdr->numberOfWheels / sizeof(uint32_t);
+    int wheelsSize = sizeof(struct TMsbWheelTime) * hdr.numberOfWheels / sizeof(uint32_t);
     outbuf[6] = wheelsSize & 0xFF;
     outbuf[7] = (wheelsSize >> 8) & 0xFF;
     outbuf[8] = (wheelsSize >> 16) & 0xFF;
@@ -251,14 +283,14 @@ int8_t bus_request_state() {
 
     r = libusb_bulk_transfer(handle, 0x2, (unsigned char *) &outbuf, sizeof(outbuf), &len, 0);
     unsigned char wheelsBuf[wheelsSize * sizeof(uint32_t)];
-    inlen = 0;
+    int inlen = 0;
     r = libusb_bulk_transfer(handle, 0x86, wheelsBuf, sizeof(wheelsBuf), &inlen, 0);
     printArray("wheels data: ", wheelsBuf, inlen);
     uint32_t *time = (uint32_t *) &wheelsBuf;
-    uint32_t baseTimeOffsetMks = s2mks(hdr->timeFirstWheel - hdr->timeStart);
+    uint32_t baseTimeOffsetMks = s2mks(hdr.timeFirstWheel - hdr.timeStart);
     // todo: free
-    uint32_t *wheelTimes = malloc(sizeof(uint32_t) * hdr->numberOfWheels);
-    for (int i = 0; i < hdr->numberOfWheels * 6; i += 6) {
+    uint32_t *wheelTimes = malloc(sizeof(uint32_t) * hdr.numberOfWheels);
+    for (int i = 0; i < hdr.numberOfWheels * 6; i += 6) {
         uint64_t sum = 0;
         uint8_t items = 0;
         for (int j = 0; j < 6; j++) {
@@ -277,14 +309,6 @@ int8_t bus_request_state() {
     return 0;
 }
 
-static int8_t bus_send_request(unsigned char *req, uint8_t reqlen) {
-    int len = 0;
-    int r = libusb_bulk_transfer(handle, 0x2, req, reqlen, &len, 0);
-    if (LIBUSB_SUCCESS != r || len != reqlen) {
-        return -1;
-    }
-    return 0;
-}
 
 int8_t bus_handle_events() {
     return (int8_t) libusb_handle_events_timeout(ctx, &NO_TIMEOUT);
