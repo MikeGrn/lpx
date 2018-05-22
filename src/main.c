@@ -64,10 +64,8 @@ int main() {
                     r = bus_handle_events();
                     assert(0 == r); // TODO
                     enum BusState curState = bus_state();
-                    if (prevState != curState && curState == TRAIN) {
+                    if (prevState != curState && TRAIN == curState) {
                         webcam_start_stream(bus_trainId());
-                    } else if (prevState != curState && curState == WAIT_TRAIN) {
-                        bus_request_state();
                     }
                     break;
                 } else if (fds[i].revents == POLLERR) {
@@ -78,7 +76,11 @@ int main() {
                 }
             }
             if (POLLIN == fds[WEBCAM].revents) {
-                webcam_handle_frame(bus_trainId(), bus_state() == WAIT_TRAIN);
+                webcam_handle_frame(bus_trainId(), WAIT_TRAIN == bus_state());
+                // TODO: вынести обработку поезда в отдельный поток
+                if (WAIT_TRAIN == bus_state()) {
+                    bus_request_state();
+                }
                 // TODO: удалить стрим
             }
             if (POLLERR == fds[WEBCAM].revents) {

@@ -136,7 +136,8 @@ int8_t webcam_handle_frame(int64_t trainId, bool last) {
         perror("Retrieving Frame");
         return -1;
     }
-    dprintf(outIdxFd, "%d,%d,%ld,%ld\n", frameOffset, bufferinfo.length, toMicroSeconds(frameRequestTime), toMicroSeconds(frameReadyTime));
+    dprintf(outIdxFd, "%d,%d,%ld,%ld\n", frameOffset, bufferinfo.length, tv2mks(frameRequestTime),
+            tv2mks(frameReadyTime));
     write(outFd, buffer, bufferinfo.length);
     frameOffset += bufferinfo.length;
 

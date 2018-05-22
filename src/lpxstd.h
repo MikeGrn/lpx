@@ -10,6 +10,10 @@
 
 #define ALEN(arr) ((sizeof (arr)) / sizeof ((arr)[0]))
 
-__time_t toMicroSeconds(struct timeval tv);
+__time_t tv2mks(struct timeval tv);
+
+uint32_t s2mks(uint32_t seconds);
+
+void printArray(char *prefix, const unsigned char *arr, int len);
 
 #endif //LPX_LPXSTD_H
