@@ -82,15 +82,39 @@ int main() {
                 // TODO: вынести обработку поезда в отдельный поток
                 if (WAIT_TRAIN == bus_state()) {
                     // TODO: освободить офсеты
-                    uint32_t *timeOffsets = NULL;
+                    uint32_t *wheelOffsets = NULL;
                     uint32_t timeOffsetsLen = 0;
-                    r = bus_last_train_wheel_time_offsets(&timeOffsets, &timeOffsetsLen);
+                    r = bus_last_train_wheel_time_offsets(&wheelOffsets, &timeOffsetsLen);
                     assert(0 == r);
+                    
+                    struct FrameMeta *idx = webcam_last_stream_index();
+                    int64_t streamBase = idx->startTime;
                     printf("timeOffsetsLen: %d\n", timeOffsetsLen);
+                    int f = 0;
                     for (int i = 0; i < timeOffsetsLen; i++) {
-                        printf("%d ", timeOffsets[i]);
+                        printf("%d ", wheelOffsets[i]);
+
+                        // todo: сделать нормальную границу
+                        while ((idx + 1)->size != 0) {
+                            int64_t frameOffset = idx->startTime - streamBase;
+                            int64_t nextFrameOffset = (idx + 1)->startTime - streamBase;
+                            if (labs(nextFrameOffset - wheelOffsets[i]) > labs(frameOffset - wheelOffsets[i])) {
+                                printf("frame found idx: %d\n", f);
+                                int64_t trainId = bus_trainId();
+                                unsigned char * frame = webcam_get_frame(trainId, *idx);
+                                char nbuf[256];
+                                sprintf(nbuf, "/home/azhidkov/tmp/lpx-out/%ld-%d.jpeg", trainId, i);
+                                FILE *ft = fopen(nbuf, "wb");
+                                fwrite(frame, 1, idx->size, ft);
+                                fclose(ft);
+                                break;
+                            }
+                            f++;
+                            idx++;
+                        }
                     }
                     printf("\n");
+
                 }
                 // TODO: удалить стрим
             }

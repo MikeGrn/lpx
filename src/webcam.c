@@ -13,6 +13,9 @@
 #include <stdbool.h>
 #include <assert.h>
 #include "lpxstd.h"
+#include "webcam.h"
+
+#define MAX_FRAMES  54000
 
 static char *outDir;
 
@@ -35,6 +38,10 @@ static struct timeval frameRequestTime;
 static struct timeval frameReadyTime;
 
 static uint32_t frameOffset;
+
+static FrameMeta lastStreamIndex[MAX_FRAMES];
+
+static uint32_t nextFrame = 0;
 
 int8_t webcam_init(char *_outDir) {
     outDir = _outDir;
@@ -84,12 +91,14 @@ int8_t webcam_init(char *_outDir) {
         return -1;
     }
 
-
     buffer = mmap(NULL, bufferinfo.length, PROT_READ | PROT_WRITE, MAP_SHARED, webcamFd, bufferinfo.m.offset);
     if (buffer == MAP_FAILED) {
         perror("mmap");
         return -1;
     }
+
+    memset(&lastStreamIndex, 0, sizeof(lastStreamIndex));
+    return 0;
 }
 
 struct pollfd webcam_fd() {
@@ -111,6 +120,8 @@ int8_t webcam_start_stream(int64_t trainId) {
         return -1;
     }
     frameOffset = 0;
+    nextFrame = 0;
+    memset(&lastStreamIndex, 0, sizeof(lastStreamIndex));
 
     if (-1 == ioctl(webcamFd, VIDIOC_STREAMON, &bufferinfo.type)) {
         perror("Start Capture");
@@ -123,6 +134,7 @@ int8_t webcam_start_stream(int64_t trainId) {
     }
     gettimeofday(&frameRequestTime, NULL);
     streaming = true;
+    return 0;
 }
 
 
@@ -141,6 +153,8 @@ int8_t webcam_handle_frame(int64_t trainId, bool last) {
     dprintf(outIdxFd, "%d,%d,%ld,%ld\n", frameOffset, bufferinfo.length, tv2mks(frameRequestTime),
             tv2mks(frameReadyTime));
     write(outFd, buffer, bufferinfo.length);
+    lastStreamIndex[nextFrame++] = (FrameMeta) {.startTime = tv2mks(frameRequestTime), .endTime = tv2mks(
+            frameReadyTime), .offset = frameOffset, .size = bufferinfo.length};
     frameOffset += bufferinfo.length;
 
     if (last) {
@@ -162,6 +176,24 @@ int8_t webcam_handle_frame(int64_t trainId, bool last) {
             gettimeofday(&frameRequestTime, NULL);
         }
     }
+    return 0;
+}
+
+struct FrameMeta *webcam_last_stream_index() {
+    return lastStreamIndex;
+}
+
+unsigned char *webcam_get_frame(int64_t trainId, FrameMeta frame) {
+    unsigned char *buf = malloc(frame.size);
+
+    char nbuf[256];
+    sprintf(nbuf, "%s/%ld.mjpeg", outDir, trainId);
+    FILE *ft = fopen(nbuf, "rb");
+    fseek(ft, frame.offset, SEEK_SET);
+    fread(buf, 1, frame.size, ft);
+    fclose(ft);
+
+    return buf;
 }
 
 bool webcam_streaming() {
