@@ -7,6 +7,9 @@
 #include "lpxstd.h"
 #include "bus.h"
 #include "webcam.h"
+#include <curl/curl.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 volatile int stop = 0;
 
@@ -86,7 +89,7 @@ int main() {
                     uint32_t timeOffsetsLen = 0;
                     r = bus_last_train_wheel_time_offsets(&wheelOffsets, &timeOffsetsLen);
                     assert(0 == r);
-                    
+
                     struct FrameMeta *idx = webcam_last_stream_index();
                     int64_t streamBase = idx->startTime;
                     printf("timeOffsetsLen: %d\n", timeOffsetsLen);
@@ -99,14 +102,62 @@ int main() {
                             int64_t frameOffset = idx->startTime - streamBase;
                             int64_t nextFrameOffset = (idx + 1)->startTime - streamBase;
                             if (labs(nextFrameOffset - wheelOffsets[i]) > labs(frameOffset - wheelOffsets[i])) {
-                                printf("frame found idx: %d\n", f);
+                                printf("frame found idx: %d, ws: %d, fs: %ld\n", f, wheelOffsets[i], ((idx + 1)->startTime - streamBase)); // на втором фрейме видно огоньки
                                 int64_t trainId = bus_trainId();
-                                unsigned char * frame = webcam_get_frame(trainId, *idx);
+                                unsigned char *frame = webcam_get_frame(trainId, *idx);
                                 char nbuf[256];
                                 sprintf(nbuf, "/home/azhidkov/tmp/lpx-out/%ld-%d.jpeg", trainId, i);
                                 FILE *ft = fopen(nbuf, "wb");
                                 fwrite(frame, 1, idx->size, ft);
                                 fclose(ft);
+
+                                CURL *curl;
+                                CURLcode res;
+
+                                struct curl_httppost *formpost = NULL;
+                                struct curl_httppost *lastptr = NULL;
+                                struct curl_slist *headerlist = NULL;
+
+                                curl_global_init(CURL_GLOBAL_ALL);
+
+                                /* Fill in the file upload field */
+                                curl_formadd(&formpost,
+                                             &lastptr,
+                                             CURLFORM_COPYNAME, "file",
+                                             CURLFORM_FILE, nbuf,
+                                             CURLFORM_END);
+
+                                /* Fill in the filename field */
+                                curl_formadd(&formpost,
+                                             &lastptr,
+                                             CURLFORM_COPYNAME, "filename",
+                                             CURLFORM_COPYCONTENTS, nbuf,
+                                             CURLFORM_END);
+
+
+                                curl = curl_easy_init();
+                                /* initialize custom header list (stating that Expect: 100-continue is not
+                                   wanted */
+                                if(curl) {
+                                    /* what URL that receives this POST */
+                                    curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:8000/upload");
+                                    curl_easy_setopt(curl, CURLOPT_HTTPPOST, formpost);
+
+                                    /* Perform the request, res will get the return code */
+                                    res = curl_easy_perform(curl);
+                                    /* Check for errors */
+                                    if(res != CURLE_OK)
+                                        fprintf(stderr, "curl_easy_perform() failed: %s\n",
+                                                curl_easy_strerror(res));
+
+                                    /* always cleanup */
+                                    curl_easy_cleanup(curl);
+
+                                    /* then cleanup the formpost chain */
+                                    curl_formfree(formpost);
+                                    /* free slist */
+                                    curl_slist_free_all(headerlist);
+                                }
                                 break;
                             }
                             f++;
@@ -129,6 +180,8 @@ int main() {
     }
 
     bus_close();
+
     webcam_close();
+
     return 0;
 }
