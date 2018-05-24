@@ -14,6 +14,7 @@
 #include <assert.h>
 #include "lpxstd.h"
 #include "webcam.h"
+#include <inttypes.h>
 
 #define MAX_FRAMES  54000
 
@@ -109,13 +110,15 @@ int8_t webcam_start_stream(int64_t trainId) {
     // todo: обработать ситуацию когда стрим уже идёт
     printf("starting stream\n");
     char buf[256];
-    sprintf(buf, "%s/%ld.mjpeg", outDir, trainId);
-    if ((outFd = open(buf, O_WRONLY | O_CREAT, 0660)) < 0) {
+    sprintf(buf, "%s/%" PRId64 ".mjpeg", outDir, trainId);
+    printf("Writing stream to %s\n", buf);
+    if ((outFd = open(buf, O_WRONLY | O_CREAT, 0777)) < 0) {
         perror("open stream file");
         return -1;
     }
-    sprintf(buf, "%s/%ld.idx", outDir, trainId);
-    if ((outIdxFd = open(buf, O_WRONLY | O_CREAT, 0660)) < 0) {
+    sprintf(buf, "%s/%" PRId64 ".idx", outDir, trainId);
+    printf("Writing index to %s\n", buf);
+    if ((outIdxFd = open(buf, O_WRONLY | O_CREAT, 0777)) < 0) {
         perror("open index file");
         return -1;
     }
@@ -187,7 +190,7 @@ unsigned char *webcam_get_frame(int64_t trainId, FrameMeta frame) {
     unsigned char *buf = malloc(frame.size);
 
     char nbuf[256];
-    sprintf(nbuf, "%s/%ld.mjpeg", outDir, trainId);
+    sprintf(nbuf, "%s/%" PRId64 ".mjpeg", outDir, trainId);
     FILE *ft = fopen(nbuf, "rb");
     fseek(ft, frame.offset, SEEK_SET);
     fread(buf, 1, frame.size, ft);

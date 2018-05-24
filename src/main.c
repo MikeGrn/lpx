@@ -10,6 +10,7 @@
 #include <curl/curl.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <inttypes.h>
 
 volatile int stop = 0;
 
@@ -106,7 +107,7 @@ int main() {
                                 int64_t trainId = bus_trainId();
                                 unsigned char *frame = webcam_get_frame(trainId, *idx);
                                 char nbuf[256];
-                                sprintf(nbuf, "/home/azhidkov/tmp/lpx-out/%ld-%d.jpeg", trainId, i);
+                                sprintf(nbuf, "/home/azhidkov/tmp/lpx-out/%" PRId64 "-%d.jpeg", trainId, i);
                                 FILE *ft = fopen(nbuf, "wb");
                                 fwrite(frame, 1, idx->size, ft);
                                 fclose(ft);
@@ -140,7 +141,7 @@ int main() {
                                    wanted */
                                 if(curl) {
                                     /* what URL that receives this POST */
-                                    curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:8000/upload");
+                                    curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.1.236:8000/upload");
                                     curl_easy_setopt(curl, CURLOPT_HTTPPOST, formpost);
 
                                     /* Perform the request, res will get the return code */
