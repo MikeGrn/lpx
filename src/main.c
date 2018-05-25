@@ -92,7 +92,11 @@ int main() {
                     assert(0 == r);
 
                     struct FrameMeta *idx = webcam_last_stream_index();
-                    int64_t streamBase = idx->startTime;
+                    printf("Frames index:\n");
+                    for (int i = 0; idx[i].size != 0; i++) {
+                        printf("%d,%d,%" PRId64 ",%" PRId64 "\n", idx[i].offset, idx[i].size, idx[i].startTime, idx[i].endTime);
+                    }
+                    int64_t streamBase = idx->startTime + (idx->endTime - idx->startTime) / 2;
                     printf("timeOffsetsLen: %d\n", timeOffsetsLen);
                     int f = 0;
                     for (int i = 0; i < timeOffsetsLen; i++) {
