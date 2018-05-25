@@ -10,9 +10,9 @@
 
 #define ALEN(arr) ((sizeof (arr)) / sizeof ((arr)[0]))
 
-__time_t tv2mks(struct timeval tv);
+uint64_t tv2mks(struct timeval tv);
 
-uint32_t s2mks(uint32_t seconds);
+uint64_t s2mks(uint32_t seconds);
 
 void printArray(char *prefix, const unsigned char *arr, int len);
 

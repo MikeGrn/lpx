@@ -153,7 +153,7 @@ int8_t webcam_handle_frame(int64_t trainId, bool last) {
         perror("Retrieving Frame");
         return -1;
     }
-    dprintf(outIdxFd, "%d,%d,%ld,%ld\n", frameOffset, bufferinfo.length, tv2mks(frameRequestTime),
+    dprintf(outIdxFd, "%d,%d,%" PRId64 ",%" PRId64 "\n", frameOffset, bufferinfo.length, tv2mks(frameRequestTime),
             tv2mks(frameReadyTime));
     write(outFd, buffer, bufferinfo.length);
     lastStreamIndex[nextFrame++] = (FrameMeta) {.startTime = tv2mks(frameRequestTime), .endTime = tv2mks(

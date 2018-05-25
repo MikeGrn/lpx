@@ -2,12 +2,12 @@
 #include "lpxstd.h"
 #include <stdint.h>
 
-__time_t tv2mks(struct timeval tv) {
-    return tv.tv_sec * 1000000 + tv.tv_usec;
+uint64_t tv2mks(struct timeval tv) {
+    return tv.tv_sec * 1000000ULL + tv.tv_usec;
 }
 
-uint32_t s2mks(uint32_t seconds) {
-    return seconds * 1000000;
+uint64_t s2mks(uint32_t seconds) {
+    return seconds * 1000000ULL;
 }
 
 void printArray(char *prefix, const unsigned char *arr, int len) {
