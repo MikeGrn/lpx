@@ -20,7 +20,7 @@ enum BusState bus_state();
 
 int64_t bus_trainId();
 
-int8_t bus_last_train_wheel_time_offsets(uint32_t **timeOffsets, uint32_t *len);
+int8_t bus_last_train_wheel_time_offsets(uint64_t **timeOffsets, uint32_t *len);
 
 int8_t bus_handle_events();
 

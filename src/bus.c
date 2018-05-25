@@ -265,7 +265,7 @@ uint32_t bus_axle_avg_time(struct TMsbWheelTime axleTime) {
 /**
  * Работает в блокируещем режиме
  */
-int8_t bus_last_train_wheel_time_offsets(uint32_t **timeOffsets, uint32_t *len) {
+int8_t bus_last_train_wheel_time_offsets(uint64_t **timeOffsets, uint32_t *len) {
     struct TMsbState state = {0};
     int r = bus_read_fpga(&state);
     if (LIBUSB_SUCCESS != r) {
@@ -286,11 +286,11 @@ int8_t bus_last_train_wheel_time_offsets(uint32_t **timeOffsets, uint32_t *len) 
         return -1;
     }
 
-    uint32_t baseTimeOffsetMks = s2mks(hdr.timeFirstWheel - hdr.timeStart);
+    uint64_t baseTimeOffsetMks = hdr.trFirstWheelTime;
 
-    uint32_t *wheelOffsets = malloc(sizeof(uint32_t) * hdr.numberOfWheels);
+    uint64_t *wheelOffsets = malloc(sizeof(uint32_t) * hdr.numberOfWheels);
     for (int i = 0; i < hdr.numberOfWheels; i++) {
-        wheelOffsets[i] = baseTimeOffsetMks + bus_axle_avg_time(wheelTimes[i]);
+        wheelOffsets[i] = baseTimeOffsetMks + wheelTimes[i].rightStart;
     }
     *timeOffsets = wheelOffsets;
     *len = hdr.numberOfWheels;

@@ -86,34 +86,34 @@ int main() {
                 // TODO: вынести обработку поезда в отдельный поток
                 if (WAIT_TRAIN == bus_state()) {
                     // TODO: освободить офсеты
-                    uint32_t *wheelOffsets = NULL;
+                    uint64_t *wheelOffsets = NULL;
                     uint32_t timeOffsetsLen = 0;
                     r = bus_last_train_wheel_time_offsets(&wheelOffsets, &timeOffsetsLen);
                     assert(0 == r);
 
-                    struct FrameMeta *idx = webcam_last_stream_index();
+                    struct FrameMeta *frames = webcam_last_stream_index();
                     printf("Frames index:\n");
-                    for (int i = 0; idx[i].size != 0; i++) {
-                        printf("%d,%d,%" PRId64 ",%" PRId64 "\n", idx[i].offset, idx[i].size, idx[i].startTime, idx[i].endTime);
+                    for (int i = 0; frames[i].size != 0; i++) {
+                        printf("%d,%d,%" PRId64 ",%" PRId64 "\n", frames[i].offset, frames[i].size, frames[i].startTime, frames[i].endTime);
                     }
-                    int64_t streamBase = idx->startTime + (idx->endTime - idx->startTime) / 2;
+                    int64_t streamBase = frames->startTime;
                     printf("timeOffsetsLen: %d\n", timeOffsetsLen);
                     int f = 0;
                     for (int i = 0; i < timeOffsetsLen; i++) {
-                        printf("%d ", wheelOffsets[i]);
+                        printf("%ld ", wheelOffsets[i]);
 
                         // todo: сделать нормальную границу
-                        while ((idx + 1)->size != 0) {
-                            int64_t frameOffset = idx->startTime - streamBase;
-                            int64_t nextFrameOffset = (idx + 1)->startTime - streamBase;
+                        while ((frames[f + 1]).size != 0) {
+                            int64_t frameOffset = frames[f].startTime - streamBase;
+                            int64_t nextFrameOffset = frames[f + 1].startTime - streamBase;
                             if (labs(nextFrameOffset - wheelOffsets[i]) > labs(frameOffset - wheelOffsets[i])) {
-                                printf("frame found idx: %d, ws: %d, fs: %ld\n", f, wheelOffsets[i], ((idx + 1)->startTime - streamBase)); // на втором фрейме видно огоньки
+                                printf("frame found idx: %d, ws: %ld, fs: %ld\n", f, wheelOffsets[i], (frames[f + 1].startTime - streamBase)); // на втором фрейме видно огоньки
                                 int64_t trainId = bus_trainId();
-                                unsigned char *frame = webcam_get_frame(trainId, *idx);
+                                unsigned char *frame = webcam_get_frame(trainId, frames[f]);
                                 char nbuf[256];
                                 sprintf(nbuf, "/home/azhidkov/tmp/lpx-out/%" PRId64 "-%d.jpeg", trainId, i);
                                 FILE *ft = fopen(nbuf, "wb");
-                                fwrite(frame, 1, idx->size, ft);
+                                fwrite(frame, 1, frames[f].size, ft);
                                 fclose(ft);
 
                                 CURL *curl;
@@ -166,7 +166,6 @@ int main() {
                                 break;
                             }
                             f++;
-                            idx++;
                         }
                     }
                     printf("\n");
