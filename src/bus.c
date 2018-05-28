@@ -288,7 +288,7 @@ int8_t bus_last_train_wheel_time_offsets(uint64_t **timeOffsets, uint32_t *len) 
 
     uint64_t baseTimeOffsetMks = hdr.trFirstWheelTime;
 
-    uint64_t *wheelOffsets = malloc(sizeof(uint32_t) * hdr.numberOfWheels);
+    uint64_t *wheelOffsets = malloc(sizeof(uint64_t) * hdr.numberOfWheels);
     for (int i = 0; i < hdr.numberOfWheels; i++) {
         wheelOffsets[i] = baseTimeOffsetMks + wheelTimes[i].rightStart;
     }

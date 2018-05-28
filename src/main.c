@@ -114,6 +114,7 @@ int main() {
                                 sprintf(nbuf, "/home/azhidkov/tmp/lpx-out/%" PRId64 "-%d.jpeg", trainId, i);
                                 FILE *ft = fopen(nbuf, "wb");
                                 fwrite(frame, 1, frames[f].size, ft);
+                                free(frame);
                                 fclose(ft);
 
                                 CURL *curl;
@@ -168,6 +169,8 @@ int main() {
                             f++;
                         }
                     }
+                    free(wheelOffsets);
+                    free(frames);
                     printf("\n");
 
                 }

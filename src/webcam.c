@@ -64,7 +64,7 @@ int8_t webcam_init(char *_outDir) {
         return -1;
     }
 
-    struct v4l2_format format;
+    struct v4l2_format format = {0};
     format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     format.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
     format.fmt.pix.width = 640;
@@ -183,10 +183,13 @@ int8_t webcam_handle_frame(int64_t trainId, bool last) {
 }
 
 struct FrameMeta *webcam_last_stream_index() {
-    return lastStreamIndex;
+    FrameMeta *copy = malloc(sizeof(lastStreamIndex));
+    memcpy(copy, lastStreamIndex, sizeof(lastStreamIndex));
+    return copy;
 }
 
 unsigned char *webcam_get_frame(int64_t trainId, FrameMeta frame) {
+    printf("webcam_get_frame size: %d\n", frame.size);
     unsigned char *buf = malloc(frame.size);
 
     char nbuf[256];
