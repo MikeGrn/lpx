@@ -146,7 +146,7 @@ int main() {
                                    wanted */
                                 if(curl) {
                                     /* what URL that receives this POST */
-                                    curl_easy_setopt(curl, CURLOPT_URL, "http://192.168.1.236:8000/upload");
+                                    curl_easy_setopt(curl, CURLOPT_URL, "http://server:8000/upload");
                                     curl_easy_setopt(curl, CURLOPT_HTTPPOST, formpost);
 
                                     /* Perform the request, res will get the return code */
