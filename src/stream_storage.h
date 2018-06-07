@@ -21,7 +21,7 @@ int8_t storage_prepare(Storage *storage, char *train_id);
 ssize_t
 storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const uint8_t *buf, size_t size);
 
-ssize_t storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta *index, uint32_t frames_cnt);
+ssize_t storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta **index, uint32_t frames_cnt);
 
 int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***index, uint32_t *frames_cnt);
 

@@ -9,8 +9,6 @@
 typedef struct FrameMeta {
     int64_t start_time;
     int64_t end_time;
-    uint32_t offset;
-    uint32_t size;
 } FrameMeta;
 
 #endif //LPX_STREAM_H

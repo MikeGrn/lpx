@@ -3,24 +3,33 @@
 #include "list.h"
 #include "lpxstd.h"
 #include "stream_storage.h"
+#include "webcam2.h"
+#include "unistd.h"
 
 int main() {
     Storage *s;
     storage_open("/home/azhidkov/tmp/lpx-out", &s);
-    FrameMeta **pf = 0;
-    uint32_t frames_cnt = 0;
-    storage_read_stream_idx(s, "1", &pf, &frames_cnt);
-    for (int i = 0; i < frames_cnt; i++) {
-        printf("%d,%d,%" PRId64 ",%" PRId64 "\n", pf[i]->offset, pf[i]->size,
-               pf[i]->start_time, pf[i]->end_time);
-        free(pf[i]);
-    }
-    free(pf);
 
-    uint8_t* buf = 0;
-    size_t len = 0;
-    storage_read_frame(s, "1", 1, &buf, &len);
-    printf("%c %ld\n", buf[0], len);
-    free(buf);
+    Webcam *w;
+    webcam_init(s, "/dev/video0", &w);
+
+    if (LPX_SUCCESS != webcam_start_stream(w, "1")) {
+        printf("error\n");
+        goto cleanup;
+    }
+    sleep(1);
+    webcam_stop_stream(w);
+
+    sleep(1);
+
+    if (LPX_SUCCESS != webcam_start_stream(w, "2")) {
+        printf("error\n");
+        goto cleanup;
+    }
+    sleep(1);
+    webcam_stop_stream(w);
+
+    cleanup:
+    webcam_close(w);
     storage_close(s);
 }

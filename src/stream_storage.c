@@ -9,7 +9,7 @@
 #include "lpxstd.h"
 #include "list.h"
 
-#define FRAME_FORMAT "%d,%d,%" PRId64 ",%" PRId64 "\n"
+#define FRAME_FORMAT "%" PRId64 ",%" PRId64 "\n"
 
 typedef struct Storage {
     char *base_dir;
@@ -43,7 +43,7 @@ int8_t storage_prepare(Storage *storage, char *train_id) {
 
     char *td = train_dir(storage, train_id);
 
-    if (access(td, F_OK) != 0) {
+    if (access(td, F_OK) == 0) {
         res = STRG_EXISTS;
         goto cleanup;
     }
@@ -94,7 +94,7 @@ storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const 
 }
 
 ssize_t
-storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta *index, uint32_t frames_cnt) {
+storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta **index, uint32_t frames_cnt) {
     int8_t res = LPX_SUCCESS;
 
     char *td = train_dir(storage, train_id);
@@ -113,8 +113,7 @@ storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta *index, uin
     }
 
     for (int i = 0; i < frames_cnt; i++) {
-        int r = fprintf(idx_f, FRAME_FORMAT, index[i].offset, index[i].size,
-                        index[i].start_time, index[i].end_time);
+        int r = fprintf(idx_f, FRAME_FORMAT, index[i]->start_time, index[i]->end_time);
         if (r < 0) {
             goto close_file;
         }
@@ -158,7 +157,7 @@ storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***index, ui
     char *buf = xcalloc(sizeof(char), 256);
     while (fgets(buf, 256, idx_f) != NULL) {
         FrameMeta *frame = xmalloc(sizeof(FrameMeta));
-        int r = sscanf(buf, FRAME_FORMAT, &frame->offset, &frame->size, &frame->start_time, &frame->end_time);
+        int r = sscanf(buf, FRAME_FORMAT, &frame->start_time, &frame->end_time);
         if (r == EOF || r != 4) {
             res = STRG_BAD_INDEX;
             goto close_file;
