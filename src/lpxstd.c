@@ -2,6 +2,7 @@
 #include "lpxstd.h"
 #include <stdint.h>
 #include <string.h>
+#include <sys/stat.h>
 
 uint64_t tv2mks(struct timeval tv) {
     return tv.tv_sec * 1000000ULL + tv.tv_usec;
@@ -42,4 +43,15 @@ char *append_path(char *base, char *child) {
     char *path = xcalloc(size, sizeof(char));
     snprintf(path, size, "%s/%s", base, child);
     return path;
+}
+
+int8_t file_size(FILE *file, off_t *size) {
+    int fd = fileno(file);
+    struct stat buf;
+    if (fstat(fd, &buf) == -1) {
+        return LPX_IO;
+    }
+    *size = buf.st_size;
+
+    return LPX_SUCCESS;
 }

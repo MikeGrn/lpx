@@ -16,5 +16,11 @@ int main() {
         free(pf[i]);
     }
     free(pf);
+
+    uint8_t* buf = 0;
+    size_t len = 0;
+    storage_read_frame(s, "1", 1, &buf, &len);
+    printf("%c %ld\n", buf[0], len);
+    free(buf);
     storage_close(s);
 }

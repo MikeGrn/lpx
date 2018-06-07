@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <sys/mman.h>
 #include "stream_storage.h"
 #include "lpxstd.h"
 #include "list.h"
@@ -30,17 +31,24 @@ static char *train_dir(Storage *storage, char *train_id) {
     return append_path(storage->base_dir, train_id);
 }
 
+static char *frame_path(char *train_dir, int frame_idx) {
+    char frame_file[10 + 5 + 1]; // Любое число uint32_t влезет в 10 символов
+    snprintf(frame_file, 16, "%d.jpeg", frame_idx);
+    char *frame_path = append_path(train_dir, frame_file);
+    return frame_path;
+}
+
 int8_t storage_prepare(Storage *storage, char *train_id) {
     int8_t res = LPX_SUCCESS;
 
     char *td = train_dir(storage, train_id);
 
-    if (access(td, F_OK)) {
+    if (access(td, F_OK) != 0) {
         res = STRG_EXISTS;
         goto cleanup;
     }
 
-    if (!mkdir(td, 0700)) {
+    if (mkdir(td, 0700) != 0) {
         res = STRG_IO;
         goto cleanup;
     }
@@ -57,16 +65,14 @@ storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const 
 
     char *td = train_dir(storage, train_id);
 
-    if (!access(td, F_OK)) {
+    if (access(td, F_OK) != 0) {
         res = STRG_NOT_FOUND;
         goto cleanup;
     }
 
-    char frame_file[10 + 5 + 1]; // Любое число uint32_t влезет в 10 символов
-    snprintf(frame_file, 16, "%d.jpeg", frame_idx);
-    char *frame_path = append_path(td, frame_file);
+    char *fp = frame_path(td, frame_idx);
 
-    FILE *frame_f = fopen(frame_path, "w+");
+    FILE *frame_f = fopen(fp, "w+");
     if (frame_f == NULL) {
         res = STRG_IO;
         goto cleanup;
@@ -82,7 +88,7 @@ storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const 
 
     cleanup:
     free(td);
-    free(frame_path);
+    free(fp);
 
     return res;
 }
@@ -93,7 +99,7 @@ storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta *index, uin
 
     char *td = train_dir(storage, train_id);
 
-    if (!access(td, F_OK)) {
+    if (access(td, F_OK) != 0) {
         res = STRG_NOT_FOUND;
         goto cleanup;
     }
@@ -164,13 +170,13 @@ storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***index, ui
         goto close_file;
     }
 
-    FrameMeta **frameArray = lst_size(frames) == 0 ? NULL : xcalloc(lst_size(frames), sizeof(FrameMeta *));
+    FrameMeta **frame_array = lst_size(frames) == 0 ? NULL : xcalloc(lst_size(frames), sizeof(FrameMeta *));
 
     if (lst_size(frames) > 0) {
-        lst_to_array(frames, (void **) frameArray);
+        lst_to_array(frames, (void **) frame_array);
     }
 
-    *index = frameArray;
+    *index = frame_array;
     *frames_cnt = lst_size(frames);
 
     close_file:
@@ -185,8 +191,49 @@ storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***index, ui
     return res;
 }
 
-int8_t storage_read_frame(Storage *storage, char *train_id, uint32_t frame_idx, uint8_t *buf) {
-    return LPX_SUCCESS;
+int8_t storage_read_frame(Storage *storage, char *train_id, uint32_t frame_idx, uint8_t **buf, size_t *len) {
+    int8_t res = LPX_SUCCESS;
+
+    char *td = train_dir(storage, train_id);
+    if (access(td, F_OK) != 0) {
+        res = STRG_NOT_FOUND;
+        goto cleanup;
+    }
+
+    char *fp = frame_path(td, frame_idx);
+    if (access(fp, F_OK) != 0) {
+        res = STRG_NOT_FOUND;
+        goto cleanup;
+    }
+
+    FILE *frame_f = fopen(fp, "r");
+    if (frame_f == NULL) {
+        res = STRG_IO;
+        goto cleanup;
+    }
+
+
+    size_t size;
+    if (file_size(frame_f, (off_t *) &size) != 0) {
+        res = STRG_IO;
+        goto close_file;
+    }
+    *buf = xmalloc(size);
+    *len = size;
+
+    if (fread(*buf, size, 1, frame_f) != 0) {
+        res = STRG_IO;
+        goto close_file;
+    }
+
+    close_file:
+    fclose(frame_f);
+
+    cleanup:
+    free(td);
+    free(fp);
+
+    return res;
 }
 
 void storage_close(struct Storage *storage) {
