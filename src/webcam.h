@@ -6,8 +6,8 @@
 #include <stdint.h>
 
 typedef struct FrameMeta {
-    int64_t startTime;
-    int64_t endTime;
+    int64_t start_time;
+    int64_t end_time;
     uint32_t offset;
     uint32_t size;
 } FrameMeta;

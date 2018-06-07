@@ -94,9 +94,9 @@ int main() {
                     struct FrameMeta *frames = webcam_last_stream_index();
                     printf("Frames index:\n");
                     for (int i = 0; frames[i].size != 0; i++) {
-                        printf("%d,%d,%" PRId64 ",%" PRId64 "\n", frames[i].offset, frames[i].size, frames[i].startTime, frames[i].endTime);
+                        printf("%d,%d,%" PRId64 ",%" PRId64 "\n", frames[i].offset, frames[i].size, frames[i].start_time, frames[i].end_time);
                     }
-                    int64_t streamBase = frames->startTime;
+                    int64_t streamBase = frames->start_time;
                     printf("timeOffsetsLen: %d\n", timeOffsetsLen);
                     int f = 0;
                     for (int i = 0; i < timeOffsetsLen; i++) {
@@ -104,10 +104,10 @@ int main() {
 
                         // todo: сделать нормальную границу
                         while ((frames[f + 1]).size != 0) {
-                            int64_t frameOffset = frames[f].startTime - streamBase;
-                            int64_t nextFrameOffset = frames[f + 1].startTime - streamBase;
+                            int64_t frameOffset = frames[f].start_time - streamBase;
+                            int64_t nextFrameOffset = frames[f + 1].start_time - streamBase;
                             if (labs(nextFrameOffset - wheelOffsets[i]) > labs(frameOffset - wheelOffsets[i])) {
-                                printf("frame found idx: %d, ws: %ld, fs: %ld\n", f, wheelOffsets[i], (frames[f + 1].startTime - streamBase)); // на втором фрейме видно огоньки
+                                printf("frame found idx: %d, ws: %ld, fs: %ld\n", f, wheelOffsets[i], (frames[f + 1].start_time - streamBase)); // на втором фрейме видно огоньки
                                 int64_t trainId = bus_trainId();
                                 unsigned char *frame = webcam_get_frame(trainId, frames[f]);
                                 char nbuf[256];
@@ -146,7 +146,7 @@ int main() {
                                    wanted */
                                 if(curl) {
                                     /* what URL that receives this POST */
-                                    curl_easy_setopt(curl, CURLOPT_URL, "http://server:8000/upload");
+                                    curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:8000/upload");
                                     curl_easy_setopt(curl, CURLOPT_HTTPPOST, formpost);
 
                                     /* Perform the request, res will get the return code */
