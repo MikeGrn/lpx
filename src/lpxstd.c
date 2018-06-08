@@ -23,6 +23,8 @@ void printArray(char *prefix, const unsigned char *arr, int len) {
 void *xmalloc(size_t n) {
     void *p = malloc(n);
     if (p == NULL) {
+        // На линуксе вроде как никогда не случается - когда кончается память, линукс запускает OOM-killer,
+        // который убивает случайные процессы, чтобы освободить память, так что скорее должен прилететь SIGKILL
         fprintf(stderr, "Could not allocate %ld bytes", n);
         abort();
     }

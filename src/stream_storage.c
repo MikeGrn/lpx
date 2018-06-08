@@ -59,7 +59,7 @@ int8_t storage_prepare(Storage *storage, char *train_id) {
     return res;
 }
 
-ssize_t
+int8_t
 storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const uint8_t *buf, size_t size) {
     int8_t res = LPX_SUCCESS;
 
@@ -93,7 +93,7 @@ storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const 
     return res;
 }
 
-ssize_t
+int8_t
 storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta **index, uint32_t frames_cnt) {
     int8_t res = LPX_SUCCESS;
 
