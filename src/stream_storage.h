@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include "stream.h"
 
+// Error codes
 #define STRG_GENERAL   2
 #define STRG_IO        3
 #define STRG_ACCESS    4

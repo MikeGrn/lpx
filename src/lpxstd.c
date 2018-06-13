@@ -3,13 +3,14 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <inttypes.h>
 
 uint64_t tv2mks(struct timeval tv) {
     return tv.tv_sec * 1000000ULL + tv.tv_usec;
 }
 
-uint64_t s2mks(uint32_t seconds) {
-    return seconds * 1000000ULL;
+uint64_t tv2ms(struct timeval tv) {
+    return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000ULL);
 }
 
 void printArray(char *prefix, const unsigned char *arr, int len) {
@@ -56,4 +57,10 @@ int8_t file_size(FILE *file, off_t *size) {
     *size = buf.st_size;
 
     return LPX_SUCCESS;
+}
+
+char *itoa(uint64_t i) {
+    char *res = xmalloc(MAX_INT_LEN);
+    snprintf(res, MAX_INT_LEN, "%" PRId64, i);
+    return res;
 }

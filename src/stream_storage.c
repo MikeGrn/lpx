@@ -158,7 +158,7 @@ storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***index, ui
     while (fgets(buf, 256, idx_f) != NULL) {
         FrameMeta *frame = xmalloc(sizeof(FrameMeta));
         int r = sscanf(buf, FRAME_FORMAT, &frame->start_time, &frame->end_time);
-        if (r == EOF || r != 4) {
+        if (r == EOF || r != 2) {
             res = STRG_BAD_INDEX;
             goto close_file;
         }
