@@ -1,194 +1,106 @@
 #include <stdio.h>
-#include <string.h>
-#include <poll.h>
-#include <signal.h>
-#include <assert.h>
-#include <stdlib.h>
-#include "lpxstd.h"
-#include "bus.h"
-#include "webcam.h"
-#include <curl/curl.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <inttypes.h>
+#include <time.h>
+#include <sys/time.h>
+#include <poll.h>
+#include <assert.h>
+#include <stdbool.h>
+#include "list.h"
+#include "lpxstd.h"
+#include "stream_storage.h"
+#include "webcam.h"
+#include "unistd.h"
+#include "bus.h"
 
-volatile int stop = 0;
+/*
+ * Структура событий (прерываний) БУСа
+ */
+typedef struct Event {
+    int8_t status; // статус чтения прерывания, 0 - ок, 3 - ошибка
+    int8_t code; // код прерывания, 0 - поезд ушёл, 1 - сигнал дальнего оповещения, 3 - прошло первое колесо
+} Event;
 
-static const int STDIN = 0;
-static const int WEBCAM = 1;
-static const int BUS = 2;
+// пайп передачи данных от потка БУСа в главный поток
+static int events_pipe[2];
 
-static void handler(int signum) {
-    printf("signal: %d\n", signum);
-    stop = 1;
+static void ec(void *user_data, int errcode) {
+    fprintf(stderr, "Webcam error, user_data: %s, code: %d\n", (char *) user_data, errcode);
+}
+
+static void bus_cb(void *user_data, int8_t status, int8_t code) {
+    printf("bus event\n");
+    Event e = {.status = status, .code = code};
+    ssize_t r = write(events_pipe[1], &e, sizeof(e));
+    assert(r == sizeof(e));
 }
 
 int main() {
-    signal(SIGINT, handler);
-    int r = bus_init();
+    int r = pipe(events_pipe);
     if (r < 0) {
-        printf("Could not initialize bus\n");
-        return -1;
-    }
-    r = webcam_init("/home/azhidkov/tmp/lpx-out"); // TODO: mkdir
-    if (r < 0) {
-        printf("Could not initialize webcam\n");
-        return -1;
+        perror("Events pipe");
+        exit(1);
     }
 
-    uint8_t busFdsCnt;
-    struct pollfd *busFds = bus_fds(&busFdsCnt);
+    Storage *s;
+    storage_open("/home/azhidkov/tmp/lpx-out", &s);
 
-    struct pollfd fds[busFdsCnt + 2];
-    fds[STDIN].fd = 0;
-    fds[STDIN].events = POLLIN;
+    Webcam *w;
+    webcam_init(s, "/dev/video0", &w, NULL, ec);
 
-    struct pollfd webcamFd = webcam_fd();
-    fds[WEBCAM].fd = webcamFd.fd;
-    fds[WEBCAM].events = webcamFd.events;
-
-    for (int i = 0; i < busFdsCnt; i++) {
-        fds[BUS + i] = busFds[i];
+    Bus *b;
+    if (LPX_SUCCESS != bus_init(&b, NULL, bus_cb)) {
+        printf("bus error\n");
+        goto cleanup;
     }
 
-    while (!stop) {
-        if (webcam_streaming()) {
-            fds[WEBCAM].fd = abs(fds[WEBCAM].fd);
-        } else {
-            fds[WEBCAM].fd = -abs(fds[WEBCAM].fd);
+    struct pollfd pfds[2];
+    // поллим стандартный ввод, для корректного завершения программы по нажатию любой клавиши
+    pfds[0].fd = 0;
+    pfds[0].events = POLLIN;
+    pfds[1].fd = events_pipe[0];
+    pfds[1].events = POLLIN;
+
+    char *train_id;
+    while (1) {
+        Event e = {0};
+        r = poll(pfds, ALEN(pfds), -1);
+        if (pfds[0].revents == POLLIN) {
+            break;
         }
-        r = poll(fds, ALEN(fds), -1);
-        assert(r >= 0); // TODO
-        if (r <= 0) {
-            printf("pret: %d\n", r);
+        if (pfds[1].revents != POLLIN) {
+            printf("re: %d\n", pfds[1].revents);
+            continue;
         }
-        if (r > 0) {
-            for (int i = BUS; i < BUS + busFdsCnt; i++) {
-                if (fds[i].revents == fds[i].events) {
-                    // todo: засирает busFds - надо разобраться почему (может из-за бага с alloca-ом busFds?)
-                    enum BusState prevState = bus_state();
-                    r = bus_handle_events();
-                    assert(0 == r); // TODO
-                    enum BusState curState = bus_state();
-                    if (prevState != curState && TRAIN == curState) {
-                        webcam_start_stream(bus_trainId());
-                    }
-                    break;
-                } else if (fds[i].revents == POLLERR) {
-                    printf("Disable %d(%d) libusb poll fd\n", fds[i].fd, fds[i].events);
-                    perror("libusb poll error");
-                    fds[i].fd = -fds[i].fd;
-                    break;
-                }
+        read(events_pipe[0], &e, sizeof(e));
+        printf("%d code: %d\n", e.status, e.code);
+        if (e.status != LPX_SUCCESS) {
+            break;
+        }
+
+        if (e.code == BUS_INT_TRAIN_IN) {
+            struct timeval time;
+            gettimeofday(&time, NULL);
+            train_id = itoa(tv2ms(time));
+            printf("Starting streaming\n");
+            r = webcam_start_stream(w, train_id);
+            if (r != LPX_SUCCESS) {
+                printf("Streaming error: %d\n", r);
             }
-            if (POLLIN == fds[WEBCAM].revents) {
-                webcam_handle_frame(bus_trainId(), WAIT_TRAIN == bus_state());
-                // TODO: вынести обработку поезда в отдельный поток
-                if (WAIT_TRAIN == bus_state()) {
-                    // TODO: освободить офсеты
-                    uint64_t *wheelOffsets = NULL;
-                    uint32_t timeOffsetsLen = 0;
-                    r = bus_last_train_wheel_time_offsets(&wheelOffsets, &timeOffsetsLen);
-                    assert(0 == r);
-
-                    struct FrameMeta *frames = webcam_last_stream_index();
-                    printf("Frames index:\n");
-                    for (int i = 0; frames[i].size != 0; i++) {
-                        printf("%d,%d,%" PRId64 ",%" PRId64 "\n", frames[i].offset, frames[i].size, frames[i].start_time, frames[i].end_time);
-                    }
-                    int64_t streamBase = frames->start_time;
-                    printf("timeOffsetsLen: %d\n", timeOffsetsLen);
-                    int f = 0;
-                    for (int i = 0; i < timeOffsetsLen; i++) {
-                        printf("%ld ", wheelOffsets[i]);
-
-                        // todo: сделать нормальную границу
-                        while ((frames[f + 1]).size != 0) {
-                            int64_t frameOffset = frames[f].start_time - streamBase;
-                            int64_t nextFrameOffset = frames[f + 1].start_time - streamBase;
-                            if (labs(nextFrameOffset - wheelOffsets[i]) > labs(frameOffset - wheelOffsets[i])) {
-                                printf("frame found idx: %d, ws: %ld, fs: %ld\n", f, wheelOffsets[i], (frames[f + 1].start_time - streamBase)); // на втором фрейме видно огоньки
-                                int64_t trainId = bus_trainId();
-                                unsigned char *frame = webcam_get_frame(trainId, frames[f]);
-                                char nbuf[256];
-                                sprintf(nbuf, "/home/azhidkov/tmp/lpx-out/%" PRId64 "-%d.jpeg", trainId, i);
-                                FILE *ft = fopen(nbuf, "wb");
-                                fwrite(frame, 1, frames[f].size, ft);
-                                free(frame);
-                                fclose(ft);
-
-                                CURL *curl;
-                                CURLcode res;
-
-                                struct curl_httppost *formpost = NULL;
-                                struct curl_httppost *lastptr = NULL;
-                                struct curl_slist *headerlist = NULL;
-
-                                curl_global_init(CURL_GLOBAL_ALL);
-
-                                /* Fill in the file upload field */
-                                curl_formadd(&formpost,
-                                             &lastptr,
-                                             CURLFORM_COPYNAME, "file",
-                                             CURLFORM_FILE, nbuf,
-                                             CURLFORM_END);
-
-                                /* Fill in the filename field */
-                                curl_formadd(&formpost,
-                                             &lastptr,
-                                             CURLFORM_COPYNAME, "filename",
-                                             CURLFORM_COPYCONTENTS, nbuf,
-                                             CURLFORM_END);
-
-
-                                curl = curl_easy_init();
-                                /* initialize custom header list (stating that Expect: 100-continue is not
-                                   wanted */
-                                if(curl) {
-                                    /* what URL that receives this POST */
-                                    curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:8000/upload");
-                                    curl_easy_setopt(curl, CURLOPT_HTTPPOST, formpost);
-
-                                    /* Perform the request, res will get the return code */
-                                    res = curl_easy_perform(curl);
-                                    /* Check for errors */
-                                    if(res != CURLE_OK)
-                                        fprintf(stderr, "curl_easy_perform() failed: %s\n",
-                                                curl_easy_strerror(res));
-
-                                    /* always cleanup */
-                                    curl_easy_cleanup(curl);
-
-                                    /* then cleanup the formpost chain */
-                                    curl_formfree(formpost);
-                                    /* free slist */
-                                    curl_slist_free_all(headerlist);
-                                }
-                                break;
-                            }
-                            f++;
-                        }
-                    }
-                    free(wheelOffsets);
-                    free(frames);
-                    printf("\n");
-
-                }
-                // TODO: удалить стрим
+        } else if (e.code == BUS_INT_TRAIN_LEAVE) {
+            if (!webcam_streaming(w)) {
+                continue;
             }
-            if (POLLERR == fds[WEBCAM].revents) {
-                perror("webcam error");
-            }
-            if (POLLIN == fds[STDIN].revents) {
-                // выходим по любому инпуту на stdin
-                break;
-            }
+            webcam_stop_stream(w);
+            free(train_id);
         }
     }
 
-    bus_close();
+    close_bus:
+    bus_close(b);
 
-    webcam_close();
+    cleanup:
+    webcam_close(w);
 
-    return 0;
+    storage_close(s);
 }
+

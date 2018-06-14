@@ -1,32 +1,30 @@
-#ifndef LPX_BUS_H
-#define LPX_BUS_H
+#ifndef LPX_BUS2_H
+#define LPX_BUS2_H
 
-#include <poll.h>
 #include <stdint.h>
 
-enum BusState {
-    NOT_INITIALIZED,
-    UNKNOWN,
-    WAIT_TRAIN,
-    TRAIN,
-    CLOSED
-};
+// Команды и структуры данных описаны в <svn-trunk>/Hardware/SynshroGD/USB_BUS/Описание работы с платой USB_БУС.doc
 
-int8_t bus_init();
+// Статусы прерываний
+#define BUS_INT_TRAIN_LEAVE 0
+#define BUS_INT_TRAIN_IN    1
+#define BUS_INT_FIRST_WHEEL 3
 
-struct pollfd *bus_fds(uint8_t *len);
+// Коды ошибок
+#define BUS_THREAD   2 // ошибки управления потоком
+#define BUS_IFACE    3 // ошибки передачи данных по интерфейсу (USB на данный момент)
+#define BUS_PROTOCOL 4 // ошибки протокола общения с БУСом
+#define BUS_DEVICE   5 // ошибки состояния памяти устройства
 
-enum BusState bus_state();
+typedef struct Bus Bus;
 
-int64_t bus_trainId();
+typedef void (*interrupt_callback)(void *user_data, int8_t status, int8_t interrupt_code);
 
-int8_t bus_last_train_wheel_time_offsets(uint64_t **timeOffsets, uint32_t *len);
+int32_t bus_init(Bus **bus, void *user_data, interrupt_callback icb);
 
-int8_t bus_handle_events();
+int32_t bus_last_train_wheel_time_offsets(Bus *bus, uint64_t **time_offsets, uint32_t *len);
 
-void bus_close();
-
-const uint16_t STATE_MARKER;
+void bus_close(Bus *bus);
 
 struct TMsbState {                // XX - hex смещение в словах (uint16_t)
     uint16_t marker;                 // 0x00 0xA55A маркер начала структуры данных. (R/O)

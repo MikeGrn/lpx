@@ -1,31 +1,26 @@
-#ifndef LPX_WEBCAM_H
-#define LPX_WEBCAM_H
+#ifndef LPX_WEBCAM2_H
+#define LPX_WEBCAM2_H
 
-#include <poll.h>
-#include <stdbool.h>
 #include <stdint.h>
+#include "stream_storage.h"
 
-typedef struct FrameMeta {
-    int64_t start_time;
-    int64_t end_time;
-    uint32_t offset;
-    uint32_t size;
-} FrameMeta;
+// Коды ошибок
+#define WC_THREAD 2 // ошибки управления потоком
+#define WC_CAP    3 // ошибки конфигурации вебкамеры
+#define WC_STRG   4 // ошибки хранилища потоков
 
-int8_t webcam_init(char *outDir);
+typedef struct Webcam Webcam;
 
-struct pollfd webcam_fd();
+typedef void (*error_callback)(void *user_data, int errcode);
 
-int8_t webcam_start_stream(int64_t trainId);
+int8_t webcam_init(Storage *storage, char *device, Webcam **webcam, void* user_data, error_callback callback);
 
-int8_t webcam_handle_frame(int64_t trainId, bool last);
+int8_t webcam_start_stream(Webcam *webcam, char *train_id);
 
-bool webcam_streaming();
+int8_t webcam_stop_stream(Webcam *webcam);
 
-struct FrameMeta *webcam_last_stream_index();
+bool webcam_streaming(Webcam *pWebcam);
 
-unsigned char *webcam_get_frame(int64_t trainId, FrameMeta frame);
-
-void webcam_close();
+void webcam_close(Webcam *webcam);
 
 #endif //LPX_WEBCAM_H

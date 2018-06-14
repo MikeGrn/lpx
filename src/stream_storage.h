@@ -19,8 +19,7 @@ int8_t storage_open(char *base_dir, Storage **storage);
 
 int8_t storage_prepare(Storage *storage, char *train_id);
 
-int8_t
-storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const uint8_t *buf, size_t size);
+int8_t storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const uint8_t *buf, size_t size);
 
 int8_t storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta **index, uint32_t frames_cnt);
 

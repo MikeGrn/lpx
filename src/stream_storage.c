@@ -9,6 +9,7 @@
 #include "lpxstd.h"
 #include "list.h"
 
+// формат записи в файле индекса потока
 #define FRAME_FORMAT "%" PRId64 ",%" PRId64 "\n"
 
 typedef struct Storage {
@@ -48,7 +49,7 @@ int8_t storage_prepare(Storage *storage, char *train_id) {
         goto cleanup;
     }
 
-    if (mkdir(td, 0700) != 0) {
+    if (mkdir(td, 0777) != 0) {
         res = STRG_IO;
         goto cleanup;
     }
@@ -129,8 +130,7 @@ storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta **index, ui
     return res;
 }
 
-int8_t
-storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***index, uint32_t *frames_cnt) {
+int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***index, uint32_t *frames_cnt) {
     int8_t res = LPX_SUCCESS;
 
     char *td = train_dir(storage, train_id);

@@ -1,7 +1,3 @@
-//
-// Created by azhidkov on 11.05.18.
-//
-
 #ifndef LPX_LPXSTD_H
 #define LPX_LPXSTD_H
 
@@ -10,6 +6,7 @@
 
 #define ALEN(arr) ((sizeof (arr)) / sizeof ((arr)[0]))
 
+// Коды статусов вызова функций
 #define LPX_SUCCESS 0
 #define LPX_IO      1
 
@@ -25,10 +22,16 @@ void* xmalloc(size_t n);
 
 void* xcalloc(size_t n, size_t size);
 
+/*
+ * Добавление child к пути base через "/"
+ */
 char* append_path(char *base, char* child);
 
 int8_t file_size(FILE *file, off_t *size);
 
+/*
+ * Перевод числа в строку
+ */
 char *itoa(uint64_t i);
 
 #endif //LPX_LPXSTD_H
