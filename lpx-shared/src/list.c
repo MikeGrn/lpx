@@ -1,8 +1,8 @@
 #include <stdint.h>
 #include <malloc.h>
 #include <string.h>
-#include "list.h"
-#include "lpxstd.h"
+#include "../include/list.h"
+#include "../include/lpxstd.h"
 
 
 typedef struct ListItem {

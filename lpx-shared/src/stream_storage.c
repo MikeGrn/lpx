@@ -5,9 +5,9 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <sys/mman.h>
-#include "stream_storage.h"
-#include "lpxstd.h"
-#include "list.h"
+#include "../include/stream_storage.h"
+#include "../include/lpxstd.h"
+#include "../include/list.h"
 
 // формат записи в файле индекса потока
 #define FRAME_FORMAT "%" PRId64 ",%" PRId64 "\n"

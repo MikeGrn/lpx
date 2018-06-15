@@ -8,9 +8,9 @@
 #include "list.h"
 #include "lpxstd.h"
 #include "stream_storage.h"
-#include "webcam.h"
+#include "../include/webcam.h"
 #include "unistd.h"
-#include "bus.h"
+#include "../include/bus.h"
 
 /*
  * Структура событий (прерываний) БУСа
@@ -45,12 +45,15 @@ int main() {
     storage_open("/home/azhidkov/tmp/lpx-out", &s);
 
     Webcam *w;
-    webcam_init(s, "/dev/video0", &w, NULL, ec);
+    if (LPX_SUCCESS != webcam_init(s, "/dev/video0", &w, NULL, ec)) {
+        printf("webcam error\n");
+        goto close_storage;
+    }
 
     Bus *b;
     if (LPX_SUCCESS != bus_init(&b, NULL, bus_cb)) {
         printf("bus error\n");
-        goto cleanup;
+        goto close_webcam;
     }
 
     struct pollfd pfds[2];
@@ -98,9 +101,10 @@ int main() {
     close_bus:
     bus_close(b);
 
-    cleanup:
+    close_webcam:
     webcam_close(w);
 
+    close_storage:
     storage_close(s);
 }
 

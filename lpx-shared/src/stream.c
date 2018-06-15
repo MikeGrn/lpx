@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <stdlib.h>
-#include "stream.h"
+#include "../include/stream.h"
 
 int32_t stream_find_frame(FrameMeta **index, uint32_t index_len, uint64_t time) {
     int64_t stream_base = index[0]->start_time;

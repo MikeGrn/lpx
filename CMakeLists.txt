@@ -1,5 +1,6 @@
 cmake_minimum_required (VERSION 2.6)
 project (lpx)
-add_executable(lpx src/main.c src/list.h src/list.c src/lpxstd.h src/lpxstd.c src/stream_storage.h src/stream_storage.c src/webcam.c src/webcam.h src/bus.c src/bus.h src/stream.c)
-target_link_libraries(lpx pthread usb-1.0)
+add_subdirectory(lpx-shared)
+add_subdirectory(lpx-control)
+add_subdirectory(lpx-server)
 set(CMAKE_BUILD_TYPE Debug)

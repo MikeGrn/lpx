@@ -6,7 +6,7 @@
 #include <memory.h>
 #include <stdbool.h>
 #include <pthread.h>
-#include "webcam.h"
+#include "../include/webcam.h"
 #include "lpxstd.h"
 #include "list.h"
 #include <unistd.h>

@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "lpxstd.h"
+#include "../include/lpxstd.h"
 #include <stdint.h>
 #include <string.h>
 #include <sys/stat.h>

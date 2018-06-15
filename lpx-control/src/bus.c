@@ -7,7 +7,7 @@
 #include <zconf.h>
 #include <poll.h>
 #include <sys/eventfd.h>
-#include "bus.h"
+#include "../include/bus.h"
 #include "lpxstd.h"
 
 static const int BUS_VENDOR_ID = 0x0547;
