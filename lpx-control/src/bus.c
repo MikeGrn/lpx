@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <assert.h>
-#include <zconf.h>
 #include <poll.h>
 #include <sys/eventfd.h>
 #include "../include/bus.h"

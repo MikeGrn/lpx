@@ -34,4 +34,6 @@ int8_t file_size(FILE *file, off_t *size);
  */
 char *itoa(uint64_t i);
 
+int8_t list_directory(char *dir, char ***children, size_t *len);
+
 #endif //LPX_LPXSTD_H

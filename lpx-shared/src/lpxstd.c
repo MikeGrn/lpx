@@ -4,6 +4,8 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <inttypes.h>
+#include <dirent.h>
+#include <list.h>
 
 uint64_t tv2mks(struct timeval tv) {
     return tv.tv_sec * 1000000ULL + tv.tv_usec;
@@ -63,4 +65,34 @@ char *itoa(uint64_t i) {
     char *res = xmalloc(MAX_INT_LEN);
     snprintf(res, MAX_INT_LEN, "%" PRId64, i);
     return res;
+}
+
+
+int8_t list_directory(char *dir, char ***children, size_t *len) {
+    DIR *dp;
+    struct dirent *dir_entry;
+
+    dp = opendir(dir);
+    List *chldrn = lst_create();
+    if (dp != NULL) {
+        while ((dir_entry = readdir(dp)) != NULL) {
+            if (strcmp(dir_entry->d_name, ".") == 0 || strcmp(dir_entry->d_name, "..") == 0) {
+                continue;
+            }
+            char *name = strndup(dir_entry->d_name, 256);
+            lst_append(chldrn, name);
+        }
+        closedir(dp);
+        uint32_t entries = lst_size(chldrn);
+        char **res = xcalloc(entries, sizeof(char*));
+        lst_to_array(chldrn, (void **) res);
+        *children = res;
+        *len = entries;
+        lst_free(chldrn);
+    } else {
+        perror("Couldn't open the directory");
+        return LPX_IO;
+    }
+
+    return LPX_SUCCESS;
 }

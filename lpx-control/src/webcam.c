@@ -1,6 +1,5 @@
 #include <fcntl.h>
 #include <linux/videodev2.h>
-#include <stropts.h>
 #include <sys/mman.h>
 #include <sys/eventfd.h>
 #include <memory.h>
@@ -13,6 +12,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <poll.h>
+#include <sys/ioctl.h>
 
 typedef struct Thread {
     Webcam *webcam;

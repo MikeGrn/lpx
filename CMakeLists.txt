@@ -1,5 +1,6 @@
 cmake_minimum_required (VERSION 2.6)
 project (lpx)
+enable_testing()
 add_subdirectory(lpx-shared)
 add_subdirectory(lpx-control)
 add_subdirectory(lpx-server)
