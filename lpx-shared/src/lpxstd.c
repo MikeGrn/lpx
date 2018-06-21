@@ -61,6 +61,16 @@ int8_t file_size(FILE *file, off_t *size) {
     return LPX_SUCCESS;
 }
 
+int8_t fd_size(int fd, off_t *size) {
+    struct stat buf;
+    if (fstat(fd, &buf) == -1) {
+        return LPX_IO;
+    }
+    *size = buf.st_size;
+
+    return LPX_SUCCESS;
+}
+
 char *itoa(uint64_t i) {
     char *res = xmalloc(MAX_INT_LEN);
     snprintf(res, MAX_INT_LEN, "%" PRId64, i);

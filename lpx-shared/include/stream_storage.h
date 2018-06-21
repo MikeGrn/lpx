@@ -6,12 +6,10 @@
 #include "stream.h"
 
 // Error codes
-#define STRG_GENERAL   2
-#define STRG_IO        3
-#define STRG_ACCESS    4
-#define STRG_EXISTS    5
-#define STRG_NOT_FOUND 6
-#define STRG_BAD_INDEX 7
+#define STRG_ACCESS    2
+#define STRG_EXISTS    3
+#define STRG_NOT_FOUND 4
+#define STRG_BAD_INDEX 5
 
 typedef struct Storage Storage;
 

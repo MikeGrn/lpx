@@ -52,7 +52,7 @@ int8_t storage_prepare(Storage *storage, char *train_id) {
     }
 
     if (mkdir(td, 0777) != 0) {
-        res = STRG_IO;
+        res = LPX_IO;
         goto cleanup;
     }
 
@@ -77,12 +77,12 @@ storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const 
 
     FILE *frame_f = fopen(fp, "w+");
     if (frame_f == NULL) {
-        res = STRG_IO;
+        res = LPX_IO;
         goto cleanup;
     }
 
     if (fwrite(buf, 1, size, frame_f) == -1) {
-        res = STRG_IO;
+        res = LPX_IO;
         goto close_file;
     }
 
@@ -111,7 +111,7 @@ storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta **index, ui
 
     FILE *idx_f = fopen(idx_path, "w+");
     if (idx_f == NULL) {
-        res = STRG_IO;
+        res = LPX_IO;
         goto cleanup;
     }
 
@@ -150,7 +150,7 @@ int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***in
 
     FILE *idx_f = fopen(idx_path, "r");
     if (idx_f == NULL) {
-        res = STRG_IO;
+        res = LPX_IO;
         goto cleanup;
     }
 
@@ -167,7 +167,7 @@ int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***in
         lst_append(frames, frame);
     }
     if (ferror(idx_f)) {
-        res = STRG_IO;
+        res = LPX_IO;
         goto close_file;
     }
 
@@ -209,21 +209,21 @@ int8_t storage_read_frame(Storage *storage, char *train_id, uint32_t frame_idx, 
 
     FILE *frame_f = fopen(fp, "r");
     if (frame_f == NULL) {
-        res = STRG_IO;
+        res = LPX_IO;
         goto cleanup;
     }
 
 
     size_t size;
     if (file_size(frame_f, (off_t *) &size) != 0) {
-        res = STRG_IO;
+        res = LPX_IO;
         goto close_file;
     }
     *buf = xmalloc(size);
     *len = size;
 
     if (fread(*buf, size, 1, frame_f) != 0) {
-        res = STRG_IO;
+        res = LPX_IO;
         goto close_file;
     }
 
@@ -259,12 +259,13 @@ static int8_t storage_read_frame_meta(Storage *storage, char *train_id, uint32_t
 
     FILE *idx_f = fopen(idx_path, "r");
     if (idx_f == NULL) {
-        res = STRG_IO;
+        res = LPX_IO;
         goto cleanup;
     }
 
 
-    char *buf = xcalloc(sizeof(char), 256);
+    char *buf = NULL;
+    buf = xcalloc(sizeof(char), 256);
     FrameMeta *frame = xmalloc(sizeof(FrameMeta));
     while (fgets(buf, 256, idx_f) != NULL) {
         int r = sscanf(buf, FRAME_FORMAT, &frame->start_time, &frame->end_time);
@@ -277,7 +278,7 @@ static int8_t storage_read_frame_meta(Storage *storage, char *train_id, uint32_t
         }
     }
     if (ferror(idx_f)) {
-        res = STRG_IO;
+        res = LPX_IO;
         goto close_file;
     }
 
@@ -285,11 +286,11 @@ static int8_t storage_read_frame_meta(Storage *storage, char *train_id, uint32_t
 
     close_file:
     fclose(idx_f);
+    free(buf);
 
     cleanup:
     free(td);
     free(idx_path);
-    free(buf);
 
     return res;
 }
@@ -303,7 +304,11 @@ int8_t storage_find_stream(Storage *storage, int64_t time, char **train_id) {
     int64_t res_diff = INT64_MAX;
     for (int i = 0; i < streams_len; i++) {
         FrameMeta *fm;
-        storage_read_frame_meta(storage, streams[i], 0, &fm);
+        int8_t r = storage_read_frame_meta(storage, streams[i], 0, &fm);
+        if (r != LPX_SUCCESS) {
+            free(streams[i]);
+            continue;
+        }
         int64_t timediff = labs(fm->start_time - time);
         if (timediff < 60 * 60 * 1000000L) {
             if (timediff < res_diff) {
@@ -374,9 +379,7 @@ int8_t storage_compress(Storage *storage, char *train_id, char *fname) {
         goto free_train_dir;
     }
 
-    printf("closing stream...\n");
     int r = zip_close(zip);
-    printf("stream closed\n");
     if (r != 0) {
         free(zip);
     }

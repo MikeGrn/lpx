@@ -29,6 +29,8 @@ char* append_path(char *base, char* child);
 
 int8_t file_size(FILE *file, off_t *size);
 
+int8_t fd_size(int fd, off_t *size);
+
 /*
  * Перевод числа в строку
  */
