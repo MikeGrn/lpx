@@ -326,7 +326,7 @@ int8_t storage_find_stream(Storage *storage, int64_t time, char **train_id) {
     *train_id = res;
 }
 
-int8_t storage_open_stream(Storage *storage, char *train_id, StreamArchiveStream **archive_stream) {
+int8_t storage_open_stream_archive(Storage *storage, char *train_id, StreamArchiveStream **archive_stream) {
     int8_t res = LPX_SUCCESS;
 
     char *td = train_dir(storage, train_id);
@@ -391,148 +391,7 @@ int8_t storage_open_stream(Storage *storage, char *train_id, StreamArchiveStream
     free(children);
 
     clean_stream:
-    stream_free(stream);
-
-    return res;
-}
-
-int8_t storage_compress(Storage *storage, char *train_id, char *fname) {
-    int8_t res = LPX_SUCCESS;
-
-    zip_t *zip;
-    int errorp = 0;
-    zip = zip_open(fname, ZIP_CREATE | ZIP_EXCL, &errorp);
-    if (zip == NULL) {
-        return LPX_IO;
-    }
-
-    char *td = train_dir(storage, train_id);
-    char **children;
-    size_t children_len;
-    list_directory(td, &children, &children_len);
-
-    for (int i = 0; i < children_len; i++) {
-        char *path = append_path(td, children[i]);
-        FILE *f = fopen(path, "rb");
-        free(path);
-        zip_source_t *source = zip_source_filep(zip, f, 0, -1);
-        if (source == NULL) {
-            res = LPX_IO;
-            fclose(f);
-            free(path);
-            goto free_file;
-        }
-
-        zip_int64_t r = zip_file_add(zip, children[i], source, ZIP_FL_ENC_GUESS);
-        if (r < 0) {
-            res = LPX_IO;
-            goto free_source;
-        }
-        // По дефолту используется 9ый уровень компрессии, который время увеличивает на порядок (на тестовых данных с 0.6 до 6 секунд),
-        // а выиграшь в размере меньше процента
-        r = zip_set_file_compression(zip, (zip_uint64_t) r, ZIP_CM_DEFLATE, 5);
-        if (r < 0) {
-            res = LPX_IO;
-            goto free_source;
-        }
-
-        continue;
-
-        free_source:
-        zip_source_free(source);
-
-        free_file:
-        fclose(f);
-        break;
-    }
-
-    if (res != LPX_SUCCESS) {
-        goto free_train_dir;
-    }
-
-    int r = zip_close(zip);
-    if (r != 0) {
-        free(zip);
-    }
-
-    free_train_dir:
-    for (int i = 0; i < children_len; i++) {
-        free(children[i]);
-    }
-    free(children);
-
-    free(td);
-
-    return res;
-}
-
-int8_t storage_compress_fd(Storage *storage, char *train_id, FILE *file) {
-    int8_t res = LPX_SUCCESS;
-
-    zip_t *zip;
-    zip_error_t errorp = {};
-    zip_source_t *in = zip_source_filep_create(file, 0, 0, &errorp);
-    zip = zip_open_from_source(in, ZIP_SOURCE_BEGIN_WRITE | ZIP_TRUNCATE, &errorp);
-    if (zip == NULL || errorp.zip_err != 0 || errorp.sys_err) {
-        return LPX_IO;
-    }
-
-    char *td = train_dir(storage, train_id);
-    char **children;
-    size_t children_len;
-    list_directory(td, &children, &children_len);
-
-    for (int i = 0; i < children_len; i++) {
-        char *path = append_path(td, children[i]);
-        FILE *f = fopen(path, "rb");
-        free(path);
-        zip_source_t *source = zip_source_filep(zip, f, 0, -1);
-        if (source == NULL) {
-            res = LPX_IO;
-            fclose(f);
-            free(path);
-            goto free_file;
-        }
-
-        zip_int64_t r = zip_file_add(zip, children[i], source, ZIP_FL_ENC_GUESS);
-        if (r < 0) {
-            res = LPX_IO;
-            goto free_source;
-        }
-        // По дефолту используется 9ый уровень компрессии, который время увеличивает на порядок (на тестовых данных с 0.6 до 6 секунд),
-        // а выиграшь в размере меньше процента
-        r = zip_set_file_compression(zip, (zip_uint64_t) r, ZIP_CM_DEFLATE, 5);
-        if (r < 0) {
-            res = LPX_IO;
-            goto free_source;
-        }
-
-        continue;
-
-        free_source:
-        zip_source_free(source);
-
-        free_file:
-        fclose(f);
-        break;
-    }
-
-    if (res != LPX_SUCCESS) {
-        goto free_train_dir;
-    }
-
-    int r = zip_close(zip);
-    if (r != 0) {
-        free(zip);
-    }
-
-    free_train_dir:
-    for (int i = 0; i < children_len; i++) {
-        free(children[i]);
-    }
-    free(children);
-
-    free(td);
+    stream_close(stream);
 
     return res;
 }

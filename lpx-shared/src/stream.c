@@ -5,6 +5,8 @@
 #include <memory.h>
 #include <archive_entry.h>
 #include <libgen.h>
+#include <stdbool.h>
+#include <poll.h>
 #include "../include/stream.h"
 
 typedef struct StreamArchiveStream {
@@ -15,9 +17,11 @@ typedef struct StreamArchiveStream {
     FILE *file;
     struct archive_entry *entry;
     int *pipe;
+    size_t pipe_size;
     archive_open_callback *open_cb;
     archive_write_callback *write_cb;
     archive_close_callback *close_cb;
+    bool eof;
 } StreamArchiveStream;
 
 static int archive_open_cb(struct archive *archive, void *_client_data) {
@@ -29,6 +33,7 @@ static la_ssize_t archive_write_cb(struct archive *archive,
                                    const void *_buffer, size_t _length) {
     StreamArchiveStream *stream = _client_data;
     ssize_t written = write(stream->pipe[1], _buffer, _length);
+    stream->pipe_size += written;
     return written;
 }
 
@@ -45,9 +50,11 @@ StreamArchiveStream *stream_create_archive_stream(struct archive *archive, char 
     res->file = NULL;
     res->pipe = xcalloc(2, sizeof(int));
     pipe(res->pipe);
+    res->pipe_size = 0;
     res->open_cb = archive_open_cb;
     res->write_cb = archive_write_cb;
     res->close_cb = archive_close_cb;
+    res->eof = false;
     return res;
 }
 
@@ -56,10 +63,6 @@ void stream_archive_callbacks(StreamArchiveStream *stream, archive_open_callback
     *open_cb = stream->open_cb;
     *write_cb = stream->write_cb;
     *close_cb = stream->close_cb;
-}
-
-int *stream_pipe(StreamArchiveStream *stream) {
-    return stream->pipe;
 }
 
 int32_t stream_find_frame(FrameMeta **index, uint32_t index_len, uint64_t time) {
@@ -80,10 +83,22 @@ static void close_current_file(StreamArchiveStream *stream) {
     archive_entry_free(stream->entry);
 }
 
-ssize_t stream_write_block(StreamArchiveStream *stream) {
+static int8_t stream_finish(StreamArchiveStream *stream) {
+    int r1 = archive_write_close(stream->archive);
+    return (int8_t) (r1 == ARCHIVE_OK ? LPX_SUCCESS : LPX_IO);
+}
+
+static int8_t fill_pipe(StreamArchiveStream *stream) {
+    int8_t res = LPX_SUCCESS;
     if (stream->file == NULL) {
         if (stream->next_file == stream->files_size) {
-            return -1;
+            size_t cur_size = stream->pipe_size;
+            res = stream_finish(stream);
+            stream->eof = true;
+            if (res != LPX_SUCCESS) {
+                return res;
+            }
+            return (int8_t) (stream->pipe_size > cur_size ? LPX_SUCCESS : -1);
         }
         char *filename = stream->files[stream->next_file++];
         stream->file = fopen(filename, "rb");
@@ -105,7 +120,6 @@ ssize_t stream_write_block(StreamArchiveStream *stream) {
             return -2;
         }
     }
-    ssize_t res;
     size_t size = 10240;
     uint8_t *rbuf = xmalloc(size);
     size_t len = fread(rbuf, sizeof(uint8_t), size, stream->file);
@@ -117,25 +131,45 @@ ssize_t stream_write_block(StreamArchiveStream *stream) {
             goto free_rbuf;
         }
     }
-    res = archive_write_data(stream->archive, rbuf, len);
+    ssize_t written = archive_write_data(stream->archive, rbuf, len);
+    if (written < 0) {
+        res = LPX_IO;
+    }
+
     free_rbuf:
     free(rbuf);
     return res;
 }
 
-void stream_free(StreamArchiveStream *stream) {
+ssize_t stream_read(StreamArchiveStream *stream, uint8_t *buf, size_t max) {
+    while (stream->pipe_size < max && stream->eof == false) {
+        int8_t res = fill_pipe(stream);
+        if (res == LPX_SUCCESS) {
+            continue;
+        } else if (res == -1) {
+            break;
+        } else if (res == -2) {
+            return res;
+        }
+    }
+    if (stream->pipe_size == 0) {
+        return -1;
+    }
+
+    ssize_t readed = read(stream->pipe[0], buf, max);
+    if (readed < 0) {
+        return LPX_IO;
+    }
+    stream->pipe_size -= readed;
+    return readed;
+}
+
+void stream_close(StreamArchiveStream *stream) {
+    archive_write_free(stream->archive);
+    close(stream->pipe[0]);
+    close(stream->pipe[0]);;
     free(stream->files);
     free(stream->pipe);
     free(stream);
 }
 
-void stream_finish(StreamArchiveStream *stream) {
-    int r = archive_write_close(stream->archive);
-    r = archive_write_free(stream->archive);
-}
-
-void stream_close(StreamArchiveStream *stream) {
-    close(stream->pipe[0]);
-    close(stream->pipe[0]);
-    stream_free(stream);
-}

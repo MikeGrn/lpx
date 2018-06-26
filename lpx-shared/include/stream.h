@@ -30,13 +30,7 @@ StreamArchiveStream *stream_create_archive_stream(struct archive *archive, char 
 void stream_archive_callbacks(StreamArchiveStream *stream, archive_open_callback **open_cb,
                               archive_write_callback **write_cb, archive_close_callback **close_cb);
 
-int *stream_pipe(StreamArchiveStream *stream);
-
-ssize_t stream_write_block(StreamArchiveStream *archiveStream);
-
-void stream_free(StreamArchiveStream *stream);
-
-void stream_finish(StreamArchiveStream *stream);
+ssize_t stream_read(StreamArchiveStream *stream, uint8_t *buf, size_t max);
 
 void stream_close(StreamArchiveStream *archiveStream);
 
