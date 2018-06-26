@@ -33,10 +33,7 @@ void test_list_directory(void) {
     CU_ASSERT_EQUAL(len, 2);
     CU_ASSERT_STRING_EQUAL(children[0], "subdir1");
     CU_ASSERT_STRING_EQUAL(children[1], "subdir2");
-    for (int i = 0; i < len; i++) {
-        free(children[i]);
-    }
-    free(children);
+    free_array((void **) children, len);
 }
 
 void test_read_first_frame_meta(void) {

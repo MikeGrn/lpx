@@ -38,4 +38,6 @@ char *itoa(uint64_t i);
 
 int8_t list_directory(char *dir, char ***children, size_t *len);
 
+void free_array(void **arr, size_t size);
+
 #endif //LPX_LPXSTD_H

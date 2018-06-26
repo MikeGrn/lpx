@@ -139,7 +139,6 @@ static int answer_to_connection(void *cls, struct MHD_Connection *connection,
 
 int main() {
     Storage *storage = NULL;
-    List *garbage = lst_create();
     storage_open("/home/azhidkov/tmp/lpx-out", &storage);
     LpxServer lpx = {.storage = storage};
     struct MHD_Daemon *daemon;

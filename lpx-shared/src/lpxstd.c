@@ -106,3 +106,10 @@ int8_t list_directory(char *dir, char ***children, size_t *len) {
 
     return LPX_SUCCESS;
 }
+
+void free_array(void **arr, size_t size) {
+    for (int i = 0; i < size; i++) {
+        free(arr[i]);
+    }
+    free(arr);
+}

@@ -216,10 +216,7 @@ static void *webcam_handle_stream(void *t) {
         }
     }
 
-    for (int i = 0; i < frames_cnt; i++) {
-        free(frame_array[i]);
-    }
-    free(frame_array);
+    free_array((void **) frame_array, frames_cnt);
     lst_free(frames);
 
     printf("exited\n");

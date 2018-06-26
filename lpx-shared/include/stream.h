@@ -5,6 +5,11 @@
 #include <archive.h>
 
 /**
+ * Ошибка генерации потока архива стрима
+ */
+#define STRM_IO -2
+
+/**
  * Структура записи в индексе потока
  */
 typedef struct FrameMeta {
@@ -13,7 +18,7 @@ typedef struct FrameMeta {
 } FrameMeta;
 
 /**
- * Поток байт зип-архива видео потока. Видео поток читается с диска и сжимается на лету и не буферезируется.
+ * Поток байт зип-архива видео потока. Файлы потока читаеются с диска блоками заданного размера и сжимаются на лету.
  */
 typedef struct StreamArchiveStream StreamArchiveStream;
 
@@ -25,13 +30,20 @@ typedef struct StreamArchiveStream StreamArchiveStream;
  */
 int32_t stream_find_frame(FrameMeta **index, uint32_t index_len, uint64_t time);
 
+/**
+ * Инициализирует структура архива потока, содержащего заданные файлы. В случае ошибки возвращает NULL.
+ */
 StreamArchiveStream *stream_create_archive_stream(struct archive *archive, char **files, size_t files_size);
 
-void stream_archive_callbacks(StreamArchiveStream *stream, archive_open_callback **open_cb,
-                              archive_write_callback **write_cb, archive_close_callback **close_cb);
-
+/**
+ * Записывает до `max` байт архива в буффер. Возвращает количество реально записанных байт, EOF в случае
+ * когда стрим был целиком прочитан и STRM_IO в случае ошибок генерации архива стрима
+ */
 ssize_t stream_read(StreamArchiveStream *stream, uint8_t *buf, size_t max);
 
-void stream_close(StreamArchiveStream *archiveStream);
+/**
+ * Закрывет архив и освобождает все ресурсы
+ */
+void stream_close(StreamArchiveStream *archive_stream);
 
 #endif //LPX_STREAM_H

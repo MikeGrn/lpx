@@ -356,42 +356,24 @@ int8_t storage_open_stream_archive(Storage *storage, char *train_id, StreamArchi
     }
 
     StreamArchiveStream *stream = stream_create_archive_stream(archive, files, children_len);
-    archive_open_callback *open_cb;
-    archive_write_callback *write_cb;
-    archive_close_callback *close_cb;
-    stream_archive_callbacks(stream, &open_cb, &write_cb, &close_cb);
-    int r = archive_write_open(archive, stream, open_cb, write_cb, close_cb);
-    if (r != ARCHIVE_OK) {
+    if (stream == NULL) {
         res = LPX_IO;
-        goto clean_stream;
+        goto free_files;
     }
 
     *archive_stream = stream;
-    // todo : fix me
-    for (int i = 0; i < children_len; i++) {
-        free(children[i]);
-    }
-    free(children);
-    free(td);
-
-    return res;
+    goto free_children;
 
     // Выход по ошибке
+    free_files:
+    free_array((void **) files, children_len);
+
+    // Успешный выход
+    free_children:
+    free_array((void **) children, children_len);
+
     free_td:
     free(td);
-
-    free_files:
-    for (int i = 0; i < children_len; i++) {
-        free(files[i]);
-    }
-    free(files);
-    for (int i = 0; i < children_len; i++) {
-        free(children[i]);
-    }
-    free(children);
-
-    clean_stream:
-    stream_close(stream);
 
     return res;
 }
