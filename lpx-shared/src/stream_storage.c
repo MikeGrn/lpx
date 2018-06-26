@@ -299,23 +299,26 @@ static int8_t storage_read_frame_meta(Storage *storage, char *train_id, uint32_t
 int8_t storage_find_stream(Storage *storage, int64_t time, char **train_id) {
     char **streams;
     size_t streams_len;
-    list_directory(storage->base_dir, &streams, &streams_len);
+    int8_t res = list_directory(storage->base_dir, &streams, &streams_len);
+    if (res != LPX_SUCCESS) {
+        return LPX_IO;
+    }
 
-    char *res = NULL;
+    char *found_train_id = NULL;
     int64_t res_diff = INT64_MAX;
     for (int i = 0; i < streams_len; i++) {
         FrameMeta *fm;
-        int8_t r = storage_read_frame_meta(storage, streams[i], 0, &fm);
-        if (r != LPX_SUCCESS) {
+        res = storage_read_frame_meta(storage, streams[i], 0, &fm);
+        if (res != LPX_SUCCESS) {
             free(streams[i]);
             continue;
         }
         int64_t timediff = labs(fm->start_time - time);
         if (timediff < 60 * 60 * 1000000L) {
             if (timediff < res_diff) {
-                free(res);
+                free(found_train_id);
                 res_diff = timediff;
-                res = strdup(streams[i]);
+                found_train_id = strdup(streams[i]);
             }
         }
         free(streams[i]);
@@ -323,16 +326,16 @@ int8_t storage_find_stream(Storage *storage, int64_t time, char **train_id) {
     }
     free(streams);
 
-    *train_id = res;
+    *train_id = found_train_id;
+
+    return LPX_SUCCESS;
 }
 
 int8_t storage_open_stream_archive(Storage *storage, char *train_id, StreamArchiveStream **archive_stream) {
-    int8_t res = LPX_SUCCESS;
-
     char *td = train_dir(storage, train_id);
     char **children;
     size_t children_len;
-    res = list_directory(td, &children, &children_len);
+    int8_t res = list_directory(td, &children, &children_len);
     if (res != LPX_SUCCESS) {
         res = LPX_IO;
         goto free_td;

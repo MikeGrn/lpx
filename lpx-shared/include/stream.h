@@ -10,6 +10,11 @@
 #define STRM_IO -2
 
 /**
+ * Ошибка работы с архивом
+ */
+#define STRM_ARCHIVE 2
+
+/**
  * Структура записи в индексе потока
  */
 typedef struct FrameMeta {
