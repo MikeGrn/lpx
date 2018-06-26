@@ -11,6 +11,7 @@
 #include <lpxstd.h>
 #include <fcntl.h>
 #include <list.h>
+#include <assert.h>
 
 #define PORT 8888
 
@@ -19,10 +20,33 @@ typedef struct LpxServer {
     List *garbage;
 } LpxServer;
 
-static int print_out_key(void *cls, enum MHD_ValueKind kind, const char *key,
-                         const char *value) {
-    printf("%s: %s\n", key, value);
-    return MHD_YES;
+static ssize_t stream_reader_callback(void *cls, uint64_t pos, char *buf, size_t max) {
+    static uint64_t spos = 0;
+    assert(pos == spos);
+    if (pos == 0) {
+        spos = pos;
+    }
+    StreamArchiveStream *stream = cls;
+    int *pipe = stream_pipe(stream);
+    int bpos = 0;
+    ssize_t moved = read(pipe[0], buf, max);
+    ssize_t res = 0;
+    while (moved < max) {
+        ssize_t r = stream_write_block(stream);
+        assert(r >= 0);
+        moved = read(pipe[0], buf + bpos, max);
+        bpos += moved;
+        max -= moved;
+    }
+    if (res >= 0) {
+        spos += bpos;
+    }
+    return res;
+}
+
+static void stream_close_callback(void *cls) {
+    StreamArchiveStream *stream = cls;
+    stream_close(stream);
 }
 
 static int bad_request(struct MHD_Connection *connection, char *msg) {
@@ -93,7 +117,8 @@ static int handle_stream(LpxServer *lpx, struct MHD_Connection *connection, cons
     int fd = open(fname, O_RDONLY);
     off_t size;
     fd_size(fd, &size);
-    response = MHD_create_response_from_fd((size_t) size, fd);
+    response = MHD_create_response_from_callback(MHD_SIZE_UNKNOWN, 1024, stream_reader_callback, NULL,
+                                                 stream_close_callback);
     MHD_add_response_header(response, "Content-Type", "application/zip");
     char *filename = xcalloc(1024, sizeof(char));
     sprintf(filename, "attachment; filename=\"%s.zip\"", stream);

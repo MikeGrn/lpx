@@ -27,6 +27,8 @@ int8_t storage_read_frame(Storage *storage, char *train_id, uint32_t frame_idx, 
 
 int8_t storage_find_stream(Storage *storage, int64_t time, char **train_id);
 
+int8_t storage_open_stream(Storage *storage, char *train_id, StreamArchiveStream **archive_stream);
+
 int8_t storage_compress(Storage *storage, char *train_id, char *fname);
 
 void storage_close(Storage *storage);
