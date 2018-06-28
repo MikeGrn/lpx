@@ -1,24 +1,19 @@
 #include <stdint.h>
 #include <stdlib.h>
-#include <archive.h>
+#include <stdio.h>
 #include <lpxstd.h>
 #include <memory.h>
-#include <archive_entry.h>
 #include <libgen.h>
 #include <stdbool.h>
 #include <poll.h>
+#include <assert.h>
 #include "../include/stream.h"
 
-typedef struct StreamArchiveStream {
-    /**
-     * Записываемый архив
-     */
-    struct archive *archive;
-
+typedef struct VideoStreamBytesStream {
     /**
      * Абсолютные пути к файлам, которые должны попасть в архив.
      */
-    char **files;
+    char **file_paths;
     size_t files_size;
 
     /**
@@ -30,70 +25,15 @@ typedef struct StreamArchiveStream {
      * Файл добавляемый в архив в данный момент
      */
     FILE *file;
-    /**
-     * Ентри архива записываемая в данный момент
-     */
-    struct archive_entry *entry;
 
-    /**
-     * libarchive использует "push" модель - мы в неё "проталкиваем" входные байты, а она "сливает" байты архива
-     * на диск, в память или коллбэк.
-     *
-     * microhttpd использует "pull" модель - он из нас "вытягивает" входные данный в буффер в памяти, и потом сливает
-     * этот буффер в ХТТП ответ.
-     *
-     * Для того чтобы подружить эти две модели используется пайп. Когда к нам приходит microhttpd за куском данных,
-     * мы начинаем читать данные с диска и проталкивать их в пайп, пока архиватор не запишет в пайп нужное серверку кол-во данных,
-     * после чего мы вытягиваем данные из пайпа и отдаём их серверу.
-     */
-    int *pipe;
-    size_t pipe_size;
+} VideoStreamBytesStream;
 
-    /**
-     * Флаг конца архива. Устанавливается в true, когда все файлы добавлены в архив и архив закрыт
-     * (в случае зипа записан центральный каталог)
-     */
-    bool eof;
-} StreamArchiveStream;
-
-static int archive_open_cb(struct archive *archive, void *_client_data) {
-    return ARCHIVE_OK;
-}
-
-static la_ssize_t archive_write_cb(struct archive *archive,
-                                   void *_client_data,
-                                   const void *_buffer, size_t _length) {
-    StreamArchiveStream *stream = _client_data;
-    ssize_t written = write(stream->pipe[1], _buffer, _length);
-    stream->pipe_size += written;
-    return written;
-}
-
-int archive_close_cb(struct archive *archive, void *_client_data) {
-    StreamArchiveStream *stream = _client_data;
-    stream->eof = true;
-    return ARCHIVE_OK;
-}
-
-static void free_stream(StreamArchiveStream *stream);
-
-StreamArchiveStream *stream_create_archive_stream(struct archive *archive, char **files, size_t files_size) {
-    StreamArchiveStream *res = xcalloc(1, sizeof(StreamArchiveStream));
-    res->archive = archive;
-    res->files = files;
+VideoStreamBytesStream *stream_open(char **files, size_t files_size) {
+    VideoStreamBytesStream *res = xcalloc(1, sizeof(VideoStreamBytesStream));
+    res->file_paths = files;
     res->files_size = files_size;
     res->next_file = 0;
     res->file = NULL;
-    res->pipe = xcalloc(2, sizeof(int));
-    pipe(res->pipe);
-    res->pipe_size = 0;
-    res->eof = false;
-
-    int r = archive_write_open(archive, res, archive_open_cb, archive_write_cb, archive_close_cb);
-    if (r != ARCHIVE_OK) {
-        free_stream(res);
-        return NULL;
-    }
 
     return res;
 }
@@ -110,132 +50,105 @@ int32_t stream_find_frame(FrameMeta **index, uint32_t index_len, uint64_t time) 
     return -1;
 }
 
-static void close_current_file(StreamArchiveStream *stream) {
+static void close_current_file(VideoStreamBytesStream *stream) {
     fclose(stream->file);
     stream->file = NULL;
-    archive_entry_free(stream->entry);
 }
 
-static int8_t open_next_file(StreamArchiveStream *stream) {
+static int8_t open_next_file(VideoStreamBytesStream *stream, char **next_file_name) {
     if (stream->next_file == stream->files_size) {
         return EOF;
     }
 
     int8_t res = LPX_SUCCESS;
 
-    char *filename = stream->files[stream->next_file++];
+    char *filename = stream->file_paths[stream->next_file++];
     stream->file = fopen(filename, "rb");
     if (stream->file == NULL) {
         return LPX_IO;
     }
-    struct stat st;
-    stat(filename, &st);
-    stream->entry = archive_entry_new();
-    if (stream->entry == NULL) {
-        res = STRM_ARCHIVE;
-        goto close_file;
-    }
-    char *file = basename(filename);
-    archive_entry_set_pathname(stream->entry, file);
-    archive_entry_set_size(stream->entry, st.st_size);
-    archive_entry_set_filetype(stream->entry, AE_IFREG);
-    archive_entry_set_perm(stream->entry, 0644);
-    int r = archive_write_header(stream->archive, stream->entry);
-    if (r != ARCHIVE_OK) {
-        res = STRM_ARCHIVE;
-        goto close_file;
-    }
+    
+    *next_file_name = filename;
 
-    goto success;
-
-    close_file:
-    close_current_file(stream);
-
-    success:
     return res;
-}
-
-static int8_t stream_finish(StreamArchiveStream *stream) {
-    int r1 = archive_write_close(stream->archive);
-    return (int8_t) (r1 == ARCHIVE_OK ? LPX_SUCCESS : LPX_IO);
 }
 
 /**
- * `size` имеет рекомендательный характер и в пайп может быть записано и меньше, и ровно столько, и больше байт.
  * Возвращает LPX_SUCCESS, если данные были успешно записаны в пайп, EOF, если стрим закончился, LPX_IO, если случилась
- * ошибка ввода-вывода и STRM_ARCHIVE, если случилась ошибка генерации архива.
+ * ошибка ввода-вывода. Количество прочитанных байт записывается в read.
  */
-static int8_t fill_pipe(StreamArchiveStream *stream, size_t size) {
+static int8_t read_part(VideoStreamBytesStream *stream, uint8_t *buf, size_t size, size_t *read) {
+    *read = 0;
     int8_t res = LPX_SUCCESS;
     if (stream->file == NULL) {
-        res = open_next_file(stream);
+        char *next_file_path;
+        res = open_next_file(stream, &next_file_path);
         if (res != LPX_SUCCESS) {
             return res;
         }
+
+        char *file_name = basename(next_file_path);
+        size_t name_len = strlen(file_name) + 1;
+        memcpy(buf, file_name, name_len);
+        size -= name_len;
+        buf += name_len;
+        *read += name_len;
+        
+        struct stat st;
+        int r = stat(next_file_path, &st);
+        if (r != 0) {
+            return LPX_IO;
+        }
+        uint64_t fsize = (uint64_t) st.st_size;
+        size_t size_len = sizeof(fsize);
+        
+        memcpy(buf, &fsize, size_len);
+        size -= size_len;
+        buf += size_len;
+        *read += size_len;
     }
 
-    uint8_t *rbuf = xmalloc(size);
-    size_t len = fread(rbuf, sizeof(uint8_t), size, stream->file);
+    size_t len = fread(buf, sizeof(uint8_t), size, stream->file);
     if (len < size) {
         if (feof(stream->file)) {
             close_current_file(stream);
-            if (stream->next_file == stream->files_size) {
-                // записан последний файл, данный вызов допишет допольнительные байты в пайп
-                res = stream_finish(stream);
-                goto free_rbuf;
-            }
         } else {
             res = LPX_IO;
-            goto free_rbuf;
         }
     }
-    ssize_t written = archive_write_data(stream->archive, rbuf, len);
-    if (written < 0) {
-        res = LPX_IO;
-    }
 
-    free_rbuf:
-    free(rbuf);
+    *read += len;
 
     return res;
 }
 
-ssize_t stream_read(StreamArchiveStream *stream, uint8_t *buf, size_t max) {
-    while (stream->pipe_size < max && stream->eof == false) {
-        int8_t res = fill_pipe(stream, max);
+ssize_t stream_read(VideoStreamBytesStream *stream, uint8_t *buf, size_t max) {
+    size_t available = max;
+    while (available > 0) {
+        size_t read = 0;
+        int8_t res = read_part(stream, buf, available, &read);
         if (res == LPX_SUCCESS) {
+            buf += read;
+            available -= read;
+            assert(available >= 0);
             continue;
         } else if (res == EOF) {
-            break;
-        } else if (res == LPX_IO || res == STRM_ARCHIVE) {
+            return EOF;
+        } else if (res == LPX_IO) {
             return STRM_IO;
         }
     }
-    if (stream->pipe_size == 0) {
-        return EOF;
-    }
-
-    ssize_t readed = read(stream->pipe[0], buf, max);
-    if (readed < 0) {
-        return STRM_IO;
-    }
-    stream->pipe_size -= readed;
-    return readed;
+    return max - available;
 }
 
-static void free_stream(StreamArchiveStream *stream) {
+void stream_close(VideoStreamBytesStream *stream) {
+    if (stream->file) {
+        fclose(stream->file);
+    }
     for (int i = 0; i < stream->files_size; i++) {
-        free(stream->files[i]);
+        free(stream->file_paths[i]);
     }
-    close(stream->pipe[0]);
-    close(stream->pipe[1]);
-    free(stream->files);
-    free(stream->pipe);
+    free(stream->file_paths);
     free(stream);
-}
-
-void stream_close(StreamArchiveStream *archive_stream) {
-    archive_write_free(archive_stream->archive);
-    free_stream(archive_stream);
 }
 

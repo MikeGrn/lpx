@@ -1,8 +1,6 @@
 #include <CUnit/CUnit.h>
 #include <lpxstd.h>
-#include <archive_entry.h>
 #include <assert.h>
-#include <poll.h>
 #include "../include/stream_storage.h"
 #include "../src/stream_storage.c"
 #include "CUnit/Basic.h"
@@ -78,12 +76,12 @@ void test_find_second_stream(void) {
     storage_close(s);
 }
 
-void test_stream_archive(void) {
+void test_stream_streaming(void) {
     Storage *s;
     storage_open(base_dir, &s);
 
-    StreamArchiveStream *stream = NULL;
-    storage_open_stream_archive(s, "subdir1", &stream);
+    VideoStreamBytesStream *stream = NULL;
+    storage_open_stream(s, "subdir1", &stream);
 
     FILE *out = fopen("/tmp/test.zip", "wb");
     uint8_t *buf = xcalloc(10240, sizeof(uint8_t));
@@ -96,6 +94,33 @@ void test_stream_archive(void) {
 
     free(buf);
     fclose(out);
+
+    out = fopen("/tmp/test.zip", "rb");
+
+    char *file_name = xcalloc(7, sizeof(char *));
+    fread(file_name, sizeof(char), 7, out);
+    CU_ASSERT_EQUAL(strlen(file_name), 6)
+    CU_ASSERT_STRING_EQUAL(file_name, "0.jpeg")
+
+    uint64_t file_size = 0;
+    fread(&file_size, sizeof(file_size), 1, out);
+    CU_ASSERT_EQUAL(file_size, 921600)
+
+    uint8_t *stream_file = xcalloc(file_size, sizeof(uint8_t));
+    fread(stream_file, sizeof(uint8_t), file_size, out);
+
+    uint8_t *original = NULL;
+    size_t original_len = 0;
+    storage_read_frame(s, "subdir1", 0, &original, &original_len);
+    CU_ASSERT_EQUAL(file_size, original_len)
+    for (int i = 0; i < file_size; i++) {
+        CU_ASSERT_EQUAL(stream_file[i], original[i])
+    }
+
+    free(file_name);
+    free(stream_file);
+    free(original);
+
     storage_close(s);
 }
 
@@ -125,7 +150,7 @@ int main(int argc, char **argv) {
     ADD_TEST(pSuite, test_read_last_frame_meta)
     ADD_TEST(pSuite, test_find_first_stream)
     ADD_TEST(pSuite, test_find_second_stream)
-    ADD_TEST(pSuite, test_stream_archive);
+    ADD_TEST(pSuite, test_stream_streaming);
 
     /* Run tests using Basic interface */
     CU_basic_run_tests();

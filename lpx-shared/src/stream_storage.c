@@ -10,7 +10,6 @@
 #include "../include/stream_storage.h"
 #include "../include/lpxstd.h"
 #include "../include/list.h"
-#include <archive.h>
 
 // формат записи в файле индекса потока
 #define FRAME_FORMAT "%" PRId64 ",%" PRId64 "\n"
@@ -98,7 +97,7 @@ storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const 
 }
 
 int8_t
-storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta **index, uint32_t frames_cnt) {
+storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta **index, size_t frames_cnt) {
     int8_t res = LPX_SUCCESS;
 
     char *td = train_dir(storage, train_id);
@@ -133,7 +132,7 @@ storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta **index, ui
     return res;
 }
 
-int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***index, uint32_t *frames_cnt) {
+int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***index, size_t *frames_cnt) {
     int8_t res = LPX_SUCCESS;
 
     char *td = train_dir(storage, train_id);
@@ -331,51 +330,26 @@ int8_t storage_find_stream(Storage *storage, int64_t time, char **train_id) {
     return LPX_SUCCESS;
 }
 
-int8_t storage_open_stream_archive(Storage *storage, char *train_id, StreamArchiveStream **archive_stream) {
+int8_t storage_open_stream(Storage *storage, char *train_id, VideoStreamBytesStream **stream) {
     char *td = train_dir(storage, train_id);
-    char **children;
-    size_t children_len;
-    int8_t res = list_directory(td, &children, &children_len);
+    FrameMeta **index = NULL;
+    size_t index_size = 0;
+    int8_t res = storage_read_stream_idx(storage, train_id, &index, &index_size);
     if (res != LPX_SUCCESS) {
         res = LPX_IO;
-        goto free_td;
+        goto free_index;
     }
 
-    char **files = xcalloc(children_len, sizeof(char *));
-    for (int i = 0; i < children_len; i++) {
-        files[i] = append_path(td, children[i]);
+    char **files = xcalloc(index_size, sizeof(char *));
+    for (int i = 0; i < index_size; i++) {
+        files[i] = frame_path(td, i);
     }
 
-    struct archive *archive = archive_write_new();
-    if (archive == NULL ||
-        archive_write_set_format_zip(archive) != ARCHIVE_OK ||
-        archive_write_add_filter_none(archive) != ARCHIVE_OK ||
-        archive_write_zip_set_compression_store(archive) != ARCHIVE_OK ||
-        archive_write_set_bytes_per_block(archive, 0) != ARCHIVE_OK) {
+    *stream = stream_open(files, index_size);
 
-        printf("%d : %s\n", archive_errno(archive), archive_error_string(archive));
-        res = LPX_IO;
-        goto free_files;
-    }
+    free_index:
+    free_array((void **) index, index_size);
 
-    StreamArchiveStream *stream = stream_create_archive_stream(archive, files, children_len);
-    if (stream == NULL) {
-        res = LPX_IO;
-        goto free_files;
-    }
-
-    *archive_stream = stream;
-    goto free_children;
-
-    // Выход по ошибке
-    free_files:
-    free_array((void **) files, children_len);
-
-    // Успешный выход
-    free_children:
-    free_array((void **) children, children_len);
-
-    free_td:
     free(td);
 
     return res;

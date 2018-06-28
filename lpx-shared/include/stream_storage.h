@@ -19,15 +19,15 @@ int8_t storage_prepare(Storage *storage, char *train_id);
 
 int8_t storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const uint8_t *buf, size_t size);
 
-int8_t storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta **index, uint32_t frames_cnt);
+int8_t storage_store_stream_idx(Storage *storage, char *train_id, FrameMeta **index, size_t frames_cnt);
 
-int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***index, uint32_t *frames_cnt);
+int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***index, size_t *frames_cnt);
 
 int8_t storage_read_frame(Storage *storage, char *train_id, uint32_t frame_idx, uint8_t **buf, size_t *len);
 
 int8_t storage_find_stream(Storage *storage, int64_t time, char **train_id);
 
-int8_t storage_open_stream_archive(Storage *storage, char *train_id, StreamArchiveStream **archive_stream);
+int8_t storage_open_stream(Storage *storage, char *train_id, VideoStreamBytesStream **stream);
 
 void storage_close(Storage *storage);
 

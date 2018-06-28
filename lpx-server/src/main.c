@@ -25,7 +25,7 @@ static ssize_t stream_reader_callback(void *cls, uint64_t pos, char *buf, size_t
     if (pos == 0) {
         spos = pos;
     }
-    StreamArchiveStream *stream = cls;
+    VideoStreamBytesStream *stream = cls;
     ssize_t res = stream_read(stream, (uint8_t *) buf, max);
     if (res > 0) {
         spos += res;
@@ -34,7 +34,7 @@ static ssize_t stream_reader_callback(void *cls, uint64_t pos, char *buf, size_t
 }
 
 static void stream_close_callback(void *cls) {
-    StreamArchiveStream *stream = cls;
+    VideoStreamBytesStream *stream = cls;
     stream_close(stream);
 }
 
@@ -84,26 +84,26 @@ static int handle_stream(LpxServer *lpx, struct MHD_Connection *connection, cons
         return bad_request(connection, "invalid time get parameter expected");
     }
 
-    char *stream = NULL;
-    storage_find_stream(lpx->storage, time, &stream);
-    if (stream == NULL) {
+    char *stream_id = NULL;
+    storage_find_stream(lpx->storage, time, &stream_id);
+    if (stream_id == NULL) {
         return not_found(connection);
     }
-    StreamArchiveStream *archive = NULL;
-    storage_open_stream_archive(lpx->storage, stream, &archive);
+    VideoStreamBytesStream *stream = NULL;
+    storage_open_stream(lpx->storage, stream_id, &stream);
 
     struct MHD_Response *response;
 
-    response = MHD_create_response_from_callback(MHD_SIZE_UNKNOWN, 1024, stream_reader_callback, archive, stream_close_callback);
+    response = MHD_create_response_from_callback(MHD_SIZE_UNKNOWN, 1024, stream_reader_callback, stream, stream_close_callback);
     MHD_add_response_header(response, "Content-Type", "application/zip");
     char *filename = xcalloc(1024, sizeof(char));
-    sprintf(filename, "attachment; filename=\"%s.zip\"", stream);
+    sprintf(filename, "attachment; filename=\"%s.zip\"", stream_id);
     MHD_add_response_header(response, "Content-Disposition", filename);
     free(filename);
     int ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
     MHD_destroy_response(response);
 
-    free(stream);
+    free(stream_id);
 
     return ret;
 }
