@@ -34,9 +34,9 @@ static char *train_dir(Storage *storage, char *train_id) {
     return append_path(storage->base_dir, train_id);
 }
 
-static char *frame_path(char *train_dir, int frame_idx) {
-    char frame_file[10 + 5 + 1]; // Любое число uint32_t влезет в 10 символов
-    snprintf(frame_file, 16, "%d.jpeg", frame_idx);
+static char *frame_path(char *train_dir, size_t frame_idx) {
+    char frame_file[21 + 5 + 1]; // Любое число uint64_t влезет в 21 символов
+    snprintf(frame_file, 16, "%ld.jpeg", frame_idx);
     char *frame_path = append_path(train_dir, frame_file);
     return frame_path;
 }
@@ -330,7 +330,7 @@ int8_t storage_find_stream(Storage *storage, int64_t time, char **train_id) {
     return LPX_SUCCESS;
 }
 
-int8_t storage_open_stream(Storage *storage, char *train_id, VideoStreamBytesStream **stream) {
+int8_t storage_open_stream(Storage *storage, char *train_id, size_t offset_idx, VideoStreamBytesStream **stream) {
     char *td = train_dir(storage, train_id);
     FrameMeta **index = NULL;
     size_t index_size = 0;
@@ -340,12 +340,13 @@ int8_t storage_open_stream(Storage *storage, char *train_id, VideoStreamBytesStr
         goto free_index;
     }
 
-    char **files = xcalloc(index_size, sizeof(char *));
-    for (int i = 0; i < index_size; i++) {
-        files[i] = frame_path(td, i);
+    size_t files_size = offset_idx < index_size ? index_size - offset_idx : 0;
+    char **files = xcalloc(files_size, sizeof(char *));
+    for (size_t i = 0; i < files_size; i++) {
+        files[i] = frame_path(td, i + offset_idx);
     }
 
-    *stream = stream_open(files, index_size);
+    *stream = stream_open(files, files_size);
 
     free_index:
     free_array((void **) index, index_size);

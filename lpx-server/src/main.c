@@ -74,14 +74,27 @@ static int not_found(struct MHD_Connection *connection) {
 }
 
 static int handle_stream(LpxServer *lpx, struct MHD_Connection *connection, const char *url, const char *method) {
-    const char *timeStr = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "time");
-    if (timeStr == NULL) {
-        return bad_request(connection, "time get parameter expected");
+    const char *stream_time_str = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "stream_time");
+    if (stream_time_str == NULL) {
+        return bad_request(connection, "stream_time GET parameter expected");
     }
 
-    int64_t time = strtoll(timeStr, NULL, 10);
-    if (time == LLONG_MIN || time == LLONG_MAX) {
-        return bad_request(connection, "invalid time get parameter expected");
+    char *null;
+    int64_t time = strtoll(stream_time_str, &null, 10);
+    if (time == LLONG_MIN || time == LLONG_MAX || *null != 0) {
+        return bad_request(connection, "invalid stream_time GET parameter expected");
+    }
+
+    size_t offset = 0;
+    const char *offset_str = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "offset");
+    if (offset_str == NULL) {
+        offset = 0;
+    } else {
+        ssize_t soffset = strtoll(offset_str, &null, 10);
+        if (soffset == LLONG_MIN || soffset == LLONG_MAX || *null != 0 || soffset < 0) {
+            return bad_request(connection, "invalid offset GET parameter");
+        }
+        offset = (size_t) soffset;
     }
 
     char *stream_id = NULL;
@@ -90,11 +103,15 @@ static int handle_stream(LpxServer *lpx, struct MHD_Connection *connection, cons
         return not_found(connection);
     }
     VideoStreamBytesStream *stream = NULL;
-    storage_open_stream(lpx->storage, stream_id, &stream);
+    int8_t res = storage_open_stream(lpx->storage, stream_id, offset, &stream);
+    if (res != LPX_SUCCESS) {
+        return internal_error(connection);
+    }
 
     struct MHD_Response *response;
 
-    response = MHD_create_response_from_callback(MHD_SIZE_UNKNOWN, 1024, stream_reader_callback, stream, stream_close_callback);
+    response = MHD_create_response_from_callback(MHD_SIZE_UNKNOWN, 1024, stream_reader_callback, stream,
+                                                 stream_close_callback);
     MHD_add_response_header(response, "Content-Type", "application/zip");
     char *filename = xcalloc(1024, sizeof(char));
     sprintf(filename, "attachment; filename=\"%s.zip\"", stream_id);

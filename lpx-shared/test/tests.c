@@ -81,7 +81,7 @@ void test_stream_streaming(void) {
     storage_open(base_dir, &s);
 
     VideoStreamBytesStream *stream = NULL;
-    storage_open_stream(s, "subdir1", &stream);
+    storage_open_stream(s, "subdir1", 0, &stream);
 
     FILE *out = fopen("/tmp/test.zip", "wb");
     uint8_t *buf = xcalloc(10240, sizeof(uint8_t));

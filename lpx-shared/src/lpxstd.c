@@ -113,3 +113,8 @@ void free_array(void **arr, size_t size) {
     }
     free(arr);
 }
+
+bool starts_with(const char* str, const char *prefix) {
+    size_t prefix_size = strlen(prefix);
+    return strncmp(str, prefix, prefix_size) == 0;
+}

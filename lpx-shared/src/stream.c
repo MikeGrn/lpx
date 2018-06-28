@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <poll.h>
 #include <assert.h>
+#include <sys/stat.h>
 #include "../include/stream.h"
 
 typedef struct VideoStreamBytesStream {

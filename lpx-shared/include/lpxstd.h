@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #define ALEN(arr) ((sizeof (arr)) / sizeof ((arr)[0]))
 
@@ -39,5 +40,7 @@ char *itoa(uint64_t i);
 int8_t list_directory(char *dir, char ***children, size_t *len);
 
 void free_array(void **arr, size_t size);
+
+bool starts_with(const char *str, const char *prefix);
 
 #endif //LPX_LPXSTD_H
