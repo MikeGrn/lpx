@@ -312,7 +312,7 @@ int8_t storage_find_stream(Storage *storage, uint64_t time, char **train_id) {
         }
         ssize_t idx = stream_find_frame_abs(index, index_size, time);
         free_array((void **) index, index_size);
-        if(idx != -1) {
+        if (idx != -1) {
             found_train_idx = i;
         }
     }
@@ -410,6 +410,27 @@ int8_t storage_delete_stream(Storage *storage, char *train_id) {
 
     free_td:
     free(td);
+
+    return res;
+}
+
+int8_t storage_clear(Storage *storage) {
+    int8_t res = 0;
+    char **streams;
+    size_t streams_len;
+    res = list_directory(storage->base_dir, &streams, &streams_len);
+    if (res != LPX_SUCCESS) {
+        return LPX_IO;
+    }
+
+    for (int i = 0; i < streams_len; i++) {
+        res = storage_delete_stream(storage, streams[i]);
+        if (res != LPX_SUCCESS) {
+            break;
+        }
+    }
+
+    free_array((void **) streams, streams_len);
 
     return res;
 }

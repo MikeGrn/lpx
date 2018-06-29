@@ -18,6 +18,7 @@
 #define BAD_REQUEST 1
 #define INTERNAL_ERROR 2
 
+#define OK_MSG "Ok"
 #define INTERNAL_ERROR_MSG "Internal error"
 #define NOT_FOUND_MSG "Not found"
 
@@ -220,7 +221,7 @@ static int handle_stream(LpxServer *lpx, struct MHD_Connection *connection, cons
     if (strcmp(method, "DELETE") == 0) {
         res = storage_delete_stream(lpx->storage, stream_id);
         if (res == LPX_SUCCESS) {
-            ret = send_response(connection, MHD_HTTP_OK, "Ok");
+            ret = send_response(connection, MHD_HTTP_OK, OK_MSG);
         } else {
             ret = send_response(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG);
         }
@@ -234,6 +235,18 @@ static int handle_stream(LpxServer *lpx, struct MHD_Connection *connection, cons
     free(stream_id);
 
     return ret;
+}
+
+static int handle_streams(LpxServer *lpx, struct MHD_Connection *connection, const char *method) {
+    if(strcmp(method, "DELETE") != 0) {
+        return send_response(connection, MHD_HTTP_NOT_FOUND, NOT_FOUND_MSG);
+    }
+    int8_t res = storage_clear(lpx->storage);
+    if (res == LPX_SUCCESS) {
+        return send_response(connection, MHD_HTTP_OK, OK_MSG);
+    } else {
+        return send_response(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG);
+    }
 }
 
 static int answer_to_connection(void *cls, struct MHD_Connection *connection,
@@ -252,16 +265,10 @@ static int answer_to_connection(void *cls, struct MHD_Connection *connection,
 
     if (strcmp(url, "/stream") == 0) {
         return handle_stream(lpx, connection, method);
+    } else if (strcmp(url, "/streams") == 0) {
+        return handle_streams(lpx, connection, method);
     } else {
-        const char *page = "No such function";
-        struct MHD_Response *response;
-        int ret;
-
-        response = MHD_create_response_from_buffer(strlen(page), (void *) page, MHD_RESPMEM_PERSISTENT);
-        ret = MHD_queue_response(connection, MHD_HTTP_NOT_FOUND, response);
-        MHD_destroy_response(response);
-
-        return ret;
+        return send_response(connection, MHD_HTTP_NOT_FOUND, NOT_FOUND_MSG);
     }
 }
 
