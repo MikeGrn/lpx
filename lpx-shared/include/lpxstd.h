@@ -43,4 +43,6 @@ void free_array(void **arr, size_t size);
 
 bool starts_with(const char *str, const char *prefix);
 
+int uint64_t_cmp(const void *a, const void *b);
+
 #endif //LPX_LPXSTD_H

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "stream.h"
+#include "list.h"
 
 // Error codes
 #define STRG_ACCESS    2
@@ -28,6 +29,8 @@ int8_t storage_read_frame(Storage *storage, char *train_id, uint32_t frame_idx, 
 int8_t storage_find_stream(Storage *storage, int64_t time, char **train_id);
 
 int8_t storage_open_stream(Storage *storage, char *train_id, size_t offset_idx, VideoStreamBytesStream **stream);
+
+int8_t storage_open_stream_frames(Storage *storage, char *train_id, List *frame_indexes, VideoStreamBytesStream **stream);
 
 void storage_close(Storage *storage);
 

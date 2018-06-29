@@ -9,7 +9,6 @@
 #include <zip.h>
 #include "../include/stream_storage.h"
 #include "../include/lpxstd.h"
-#include "../include/list.h"
 
 // формат записи в файле индекса потока
 #define FRAME_FORMAT "%" PRId64 ",%" PRId64 "\n"
@@ -174,7 +173,7 @@ int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***in
     FrameMeta **frame_array = lst_size(frames) == 0 ? NULL : xcalloc(lst_size(frames), sizeof(FrameMeta *));
 
     if (lst_size(frames) > 0) {
-        lst_to_array(frames, (void **) frame_array);
+        lst_to_array(frames, (const void **) frame_array);
     }
 
     *index = frame_array;
@@ -347,6 +346,36 @@ int8_t storage_open_stream(Storage *storage, char *train_id, size_t offset_idx, 
     }
 
     *stream = stream_open(files, files_size);
+
+    free_index:
+    free_array((void **) index, index_size);
+
+    free(td);
+
+    return res;
+}
+
+int8_t
+storage_open_stream_frames(Storage *storage, char *train_id, List *frame_indexes, VideoStreamBytesStream **stream) {
+    char *td = train_dir(storage, train_id);
+    FrameMeta **index = NULL;
+    size_t index_size = 0;
+    int8_t res = storage_read_stream_idx(storage, train_id, &index, &index_size);
+    if (res != LPX_SUCCESS) {
+        res = LPX_IO;
+        goto free_index;
+    }
+
+    size_t files_size = lst_size(frame_indexes);
+    char **files = xcalloc(files_size, sizeof(char *));
+    ListIter *iter = lst_iterator(frame_indexes);
+    for (int i = 0; lst_iter_advance(iter); i++) {
+        files[i] = frame_path(td, *((size_t *) lst_iter_peak(iter)));
+    }
+
+    *stream = stream_open(files, files_size);
+
+    lst_iter_free(iter);
 
     free_index:
     free_array((void **) index, index_size);

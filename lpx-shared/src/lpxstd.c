@@ -93,9 +93,9 @@ int8_t list_directory(char *dir, char ***children, size_t *len) {
             lst_append(chldrn, name);
         }
         closedir(dp);
-        uint32_t entries = lst_size(chldrn);
+        size_t entries = lst_size(chldrn);
         char **res = xcalloc(entries, sizeof(char*));
-        lst_to_array(chldrn, (void **) res);
+        lst_to_array(chldrn, (const void **) res);
         *children = res;
         *len = entries;
         lst_free(chldrn);
@@ -117,4 +117,16 @@ void free_array(void **arr, size_t size) {
 bool starts_with(const char* str, const char *prefix) {
     size_t prefix_size = strlen(prefix);
     return strncmp(str, prefix, prefix_size) == 0;
+}
+
+int uint64_t_cmp(const void *a, const void *b) {
+    const uint64_t *ua = (const uint64_t*) a;
+    const uint64_t *ub = (const uint64_t*) b;
+    if (*ua < *ub) {
+        return -1;
+    } else if (*ua > *ub) {
+        return 1;
+    } else {
+        return 0;
+    }
 }

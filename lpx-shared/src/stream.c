@@ -39,16 +39,20 @@ VideoStreamBytesStream *stream_open(char **files, size_t files_size) {
     return res;
 }
 
-int32_t stream_find_frame(FrameMeta **index, uint32_t index_len, uint64_t time) {
+ssize_t stream_find_frame(FrameMeta **index, size_t index_len, uint64_t time_offset) {
     int64_t stream_base = index[0]->start_time;
-    for (int i = 0; i < index_len - 1; i++) {
+    for (size_t i = 0; i < index_len - 1; i++) {
         int64_t frameOffset = index[i]->start_time - stream_base;
         int64_t nextFrameOffset = index[i + 1]->start_time - stream_base;
-        if (labs(nextFrameOffset - time) > labs(frameOffset - time)) {
+        if (labs(nextFrameOffset - time_offset) > labs(frameOffset - time_offset)) {
             return i;
         }
     }
-    return -1;
+    if (stream_base + time_offset < index[index_len - 1]->end_time) {
+        return index_len - 1;
+    } else {
+        return -1;
+    }
 }
 
 static void close_current_file(VideoStreamBytesStream *stream) {

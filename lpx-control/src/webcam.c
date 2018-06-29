@@ -202,10 +202,10 @@ static void *webcam_handle_stream(void *t) {
         perror("VIDIOC_STREAMOFF");
     }
 
-    uint32_t frames_cnt = lst_size(frames);
+    size_t frames_cnt = lst_size(frames);
     FrameMeta **frame_array = frames_cnt == 0 ? NULL : xcalloc(frames_cnt, sizeof(FrameMeta *));
     if (frames_cnt > 0) {
-        lst_to_array(frames, (void **) frame_array);
+        lst_to_array(frames, (const void **) frame_array);
         int8_t r = storage_store_stream_idx(webcam->storage, thread->train_id, frame_array, frames_cnt);
         if (LPX_SUCCESS != r) {
             if (errno != 0) {

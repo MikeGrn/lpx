@@ -32,7 +32,7 @@ typedef struct VideoStreamBytesStream VideoStreamBytesStream;
  * index - длина индекса фреймов
  * time - время в микросекундах относительно момента начала стриминга (времени запроса первого фрейма)
  */
-int32_t stream_find_frame(FrameMeta **index, uint32_t index_len, uint64_t time);
+ssize_t stream_find_frame(FrameMeta **index, size_t index_len, uint64_t time_offset);
 
 /**
  * Инициализирует структура архива потока, содержащего заданные файлы. В случае ошибки возвращает NULL.
