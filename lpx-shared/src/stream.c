@@ -55,6 +55,15 @@ ssize_t stream_find_frame(FrameMeta **index, size_t index_len, uint64_t time_off
     }
 }
 
+ssize_t stream_find_frame_abs(FrameMeta **index, size_t index_len, uint64_t time) {
+    for (size_t i = 0; i < index_len; i++) {
+        if (index[i]->start_time <= time && index[i]->end_time >= time) {
+            return time;
+        }
+    }
+    return -1;
+}
+
 static void close_current_file(VideoStreamBytesStream *stream) {
     fclose(stream->file);
     stream->file = NULL;
@@ -72,7 +81,7 @@ static int8_t open_next_file(VideoStreamBytesStream *stream, char **next_file_na
     if (stream->file == NULL) {
         return LPX_IO;
     }
-    
+
     *next_file_name = filename;
 
     return res;
@@ -98,7 +107,7 @@ static int8_t read_part(VideoStreamBytesStream *stream, uint8_t *buf, size_t siz
         size -= name_len;
         buf += name_len;
         *read += name_len;
-        
+
         struct stat st;
         int r = stat(next_file_path, &st);
         if (r != 0) {
@@ -106,7 +115,7 @@ static int8_t read_part(VideoStreamBytesStream *stream, uint8_t *buf, size_t siz
         }
         uint64_t fsize = (uint64_t) st.st_size;
         size_t size_len = sizeof(fsize);
-        
+
         memcpy(buf, &fsize, size_len);
         size -= size_len;
         buf += size_len;

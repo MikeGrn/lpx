@@ -138,19 +138,19 @@ int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***in
 
     if (access(td, F_OK) != 0) {
         res = STRG_NOT_FOUND;
-        goto cleanup;
+        goto free_td;
     }
 
     char *idx_path = append_path(td, "index.csv");
     if (access(idx_path, F_OK) != 0) {
         res = STRG_NOT_FOUND;
-        goto cleanup;
+        goto free_td;
     }
 
     FILE *idx_f = fopen(idx_path, "r");
     if (idx_f == NULL) {
         res = LPX_IO;
-        goto cleanup;
+        goto free_td;
     }
 
     List *frames = lst_create();
@@ -161,13 +161,13 @@ int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***in
         int r = sscanf(buf, FRAME_FORMAT, &frame->start_time, &frame->end_time);
         if (r == EOF || r != 2) {
             res = STRG_BAD_INDEX;
-            goto close_file;
+            goto free_frames;
         }
         lst_append(frames, frame);
     }
     if (ferror(idx_f)) {
         res = LPX_IO;
-        goto close_file;
+        goto free_frames;
     }
 
     FrameMeta **frame_array = lst_size(frames) == 0 ? NULL : xcalloc(lst_size(frames), sizeof(FrameMeta *));
@@ -179,14 +179,14 @@ int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***in
     *index = frame_array;
     *frames_cnt = lst_size(frames);
 
-    close_file:
+    free_frames:
+    lst_free(frames);
     fclose(idx_f);
+    free(buf);
 
-    cleanup:
+    free_td:
     free(td);
     free(idx_path);
-    free(buf);
-    lst_free(frames);
 
     return res;
 }
@@ -294,7 +294,7 @@ static int8_t storage_read_frame_meta(Storage *storage, char *train_id, uint32_t
     return res;
 }
 
-int8_t storage_find_stream(Storage *storage, int64_t time, char **train_id) {
+int8_t storage_find_stream(Storage *storage, uint64_t time, char **train_id) {
     char **streams;
     size_t streams_len;
     int8_t res = list_directory(storage->base_dir, &streams, &streams_len);
@@ -302,29 +302,26 @@ int8_t storage_find_stream(Storage *storage, int64_t time, char **train_id) {
         return LPX_IO;
     }
 
-    char *found_train_id = NULL;
-    int64_t res_diff = INT64_MAX;
+    ssize_t found_train_idx = -1;
     for (int i = 0; i < streams_len; i++) {
-        FrameMeta *fm;
-        res = storage_read_frame_meta(storage, streams[i], 0, &fm);
+        FrameMeta **index;
+        size_t index_size;
+        res = storage_read_stream_idx(storage, streams[i], &index, &index_size);
         if (res != LPX_SUCCESS) {
-            free(streams[i]);
             continue;
         }
-        int64_t timediff = labs(fm->start_time - time);
-        if (timediff < 60 * 60 * 1000000L) {
-            if (timediff < res_diff) {
-                free(found_train_id);
-                res_diff = timediff;
-                found_train_id = strdup(streams[i]);
-            }
+        ssize_t idx = stream_find_frame_abs(index, index_size, time);
+        free_array((void **) index, index_size);
+        if(idx != -1) {
+            found_train_idx = i;
         }
-        free(streams[i]);
-        free(fm);
     }
-    free(streams);
+    if (found_train_idx != -1) {
+        *train_id = xcalloc(strlen(streams[found_train_idx]) + 1, sizeof(char));
+        strcpy(*train_id, streams[found_train_idx]);
+    }
 
-    *train_id = found_train_id;
+    free_array((void **) streams, streams_len);
 
     return LPX_SUCCESS;
 }
@@ -380,6 +377,38 @@ storage_open_stream_frames(Storage *storage, char *train_id, List *frame_indexes
     free_index:
     free_array((void **) index, index_size);
 
+    free(td);
+
+    return res;
+}
+
+int8_t storage_delete_stream(Storage *storage, char *train_id) {
+    int8_t res = 0;
+
+    char *td = train_dir(storage, train_id);
+    char **files;
+    size_t files_len;
+    res = list_directory(td, &files, &files_len);
+    if (res != LPX_SUCCESS) {
+        res = LPX_IO;
+        goto free_td;
+    }
+
+    for (int i = 0; i < files_len; i++) {
+        char *path = append_path(td, files[i]);
+        int r = unlink(path);
+        free(path);
+        if (r != 0) {
+            res = LPX_IO;
+            goto free_files;
+        }
+    }
+    rmdir(td);
+
+    free_files:
+    free_array((void **) files, files_len);
+
+    free_td:
     free(td);
 
     return res;

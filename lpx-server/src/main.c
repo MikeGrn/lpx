@@ -18,6 +18,9 @@
 #define BAD_REQUEST 1
 #define INTERNAL_ERROR 2
 
+#define INTERNAL_ERROR_MSG "Internal error"
+#define NOT_FOUND_MSG "Not found"
+
 typedef struct LpxServer {
     Storage *storage;
 } LpxServer;
@@ -54,36 +57,12 @@ static void stream_close_callback(void *cls) {
     stream_close(stream);
 }
 
-static int bad_request(struct MHD_Connection *connection, char *msg) {
+static int send_response(struct MHD_Connection *connection, uint16_t code, char *msg) {
     struct MHD_Response *response;
     int ret;
 
     response = MHD_create_response_from_buffer(strlen(msg), (void *) msg, MHD_RESPMEM_PERSISTENT);
-    ret = MHD_queue_response(connection, MHD_HTTP_BAD_REQUEST, response);
-    MHD_destroy_response(response);
-
-    return ret;
-}
-
-static int internal_error(struct MHD_Connection *connection) {
-    struct MHD_Response *response;
-    int ret;
-
-    char *msg = "Internal error";
-    response = MHD_create_response_from_buffer(strlen(msg), (void *) msg, MHD_RESPMEM_PERSISTENT);
-    ret = MHD_queue_response(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, response);
-    MHD_destroy_response(response);
-
-    return ret;
-}
-
-static int not_found(struct MHD_Connection *connection) {
-    struct MHD_Response *response;
-    int ret;
-
-    char *msg = "Not found";
-    response = MHD_create_response_from_buffer(strlen(msg), (void *) msg, MHD_RESPMEM_PERSISTENT);
-    ret = MHD_queue_response(connection, MHD_HTTP_NOT_FOUND, response);
+    ret = MHD_queue_response(connection, code, response);
     MHD_destroy_response(response);
 
     return ret;
@@ -181,38 +160,15 @@ open_stream(LpxServer *lpx, struct MHD_Connection *connection, char *stream_id, 
     return res;
 }
 
-static int handle_stream(LpxServer *lpx, struct MHD_Connection *connection) {
+static int handle_stream_get(LpxServer *lpx, struct MHD_Connection *connection, char *stream_id) {
     int ret = 0;
-
-    const char *stream_time_str = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "stream_time");
-    if (stream_time_str == NULL) {
-        return bad_request(connection, "stream_time GET parameter expected");
-    }
-
-    char *null;
-    int64_t time = strtoll(stream_time_str, &null, 10);
-    if (time == LLONG_MIN || time == LLONG_MAX || *null != 0) {
-        return bad_request(connection, "invalid stream_time GET parameter expected");
-    }
-
-    char *stream_id = NULL;
-    int8_t res = storage_find_stream(lpx->storage, time, &stream_id);
-    if (res != LPX_SUCCESS) {
-        ret = internal_error(connection);
-        goto free_stream_id;
-    } else if (stream_id == NULL) {
-        return not_found(connection);
-    }
-
     VideoStreamBytesStream *stream = NULL;
     char *err_msg = NULL;
-    res = open_stream(lpx, connection, stream_id, &stream, &err_msg);
+    int8_t res = open_stream(lpx, connection, stream_id, &stream, &err_msg);
     if (res == BAD_REQUEST) {
-        ret = bad_request(connection, err_msg);
-        goto free_stream_id;
+        return send_response(connection, MHD_HTTP_BAD_REQUEST, err_msg);
     } else if (res == INTERNAL_ERROR) {
-        ret = internal_error(connection);
-        goto free_stream_id;
+        return send_response(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG);
     } else if (res != LPX_SUCCESS) {
         assert(false);
     }
@@ -223,7 +179,7 @@ static int handle_stream(LpxServer *lpx, struct MHD_Connection *connection) {
                                                  stream_close_callback);
     ret = MHD_add_response_header(response, "Content-Type", "application/zip");
     if (ret != MHD_YES) {
-        goto free_stream_id;
+        return ret;
     }
     char *filename = xcalloc(1024, sizeof(char));
     sprintf(filename, "attachment; filename=\"%s.bin\"", stream_id);
@@ -231,11 +187,48 @@ static int handle_stream(LpxServer *lpx, struct MHD_Connection *connection) {
     if (ret != MHD_YES) {
         goto free_filename;
     }
-    ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
+    MHD_queue_response(connection, MHD_HTTP_OK, response);
     MHD_destroy_response(response);
 
     free_filename:
     free(filename);
+}
+
+static int handle_stream(LpxServer *lpx, struct MHD_Connection *connection, const char *method) {
+    int ret = 0;
+
+    const char *stream_time_str = MHD_lookup_connection_value(connection, MHD_GET_ARGUMENT_KIND, "stream_time");
+    if (stream_time_str == NULL) {
+        return send_response(connection, MHD_HTTP_BAD_REQUEST, "stream_time GET parameter expected");
+    }
+
+    char *null;
+    int64_t stream_time = strtoll(stream_time_str, &null, 10);
+    if (stream_time == LLONG_MIN || stream_time == LLONG_MAX || *null != 0 || stream_time < 0) {
+        return send_response(connection, MHD_HTTP_BAD_REQUEST, "invalid stream_time GET parameter");
+    }
+
+    char *stream_id = NULL;
+    int8_t res = storage_find_stream(lpx->storage, (uint64_t) stream_time, &stream_id);
+    if (res != LPX_SUCCESS) {
+        ret = send_response(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG);
+        goto free_stream_id;
+    } else if (stream_id == NULL) {
+        return send_response(connection, MHD_HTTP_NOT_FOUND, NOT_FOUND_MSG);
+    }
+
+    if (strcmp(method, "DELETE") == 0) {
+        res = storage_delete_stream(lpx->storage, stream_id);
+        if (res == LPX_SUCCESS) {
+            ret = send_response(connection, MHD_HTTP_OK, "Ok");
+        } else {
+            ret = send_response(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, INTERNAL_ERROR_MSG);
+        }
+    } else if (strcmp(method, "GET") == 0) {
+        ret = handle_stream_get(lpx, connection, stream_id);
+    } else {
+        ret = send_response(connection, MHD_HTTP_NOT_FOUND, NOT_FOUND_MSG);
+    }
 
     free_stream_id:
     free(stream_id);
@@ -249,7 +242,7 @@ static int answer_to_connection(void *cls, struct MHD_Connection *connection,
                                 const char *upload_data,
                                 size_t *upload_data_size, void **con_cls) {
     LpxServer *lpx = cls;
-    if (strcmp(method, "GET") != 0) {
+    if (strcmp(method, "GET") == 0 && strcmp(method, "DELETE") == 0) {
         return MHD_NO;
     }
     if (NULL == *con_cls) {
@@ -258,7 +251,7 @@ static int answer_to_connection(void *cls, struct MHD_Connection *connection,
     }
 
     if (strcmp(url, "/stream") == 0) {
-        return handle_stream(lpx, connection);
+        return handle_stream(lpx, connection, method);
     } else {
         const char *page = "No such function";
         struct MHD_Response *response;

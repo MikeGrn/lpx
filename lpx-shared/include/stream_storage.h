@@ -26,11 +26,24 @@ int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***in
 
 int8_t storage_read_frame(Storage *storage, char *train_id, uint32_t frame_idx, uint8_t **buf, size_t *len);
 
-int8_t storage_find_stream(Storage *storage, int64_t time, char **train_id);
+int8_t storage_find_stream(Storage *storage, uint64_t time, char **train_id);
 
+/**
+ * Возвращает поток байт содиржащих все фремы заданного стрима начиная с заданного оффсета
+ */
 int8_t storage_open_stream(Storage *storage, char *train_id, size_t offset_idx, VideoStreamBytesStream **stream);
 
+/**
+ * Возвращает поток байт содержащих фреймы по указанным индексам в заданном стриме
+ */
 int8_t storage_open_stream_frames(Storage *storage, char *train_id, List *frame_indexes, VideoStreamBytesStream **stream);
+
+int8_t storage_delete_stream(Storage *storage, char *train_id);
+
+/**
+ * Удаляет все стримы с диска
+ */
+int8_t storage_clear(Storage *storage);
 
 void storage_close(Storage *storage);
 
