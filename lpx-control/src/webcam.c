@@ -238,9 +238,9 @@ int8_t webcam_start_stream(Webcam *webcam, char *train_id) {
     webcam->thread = thread;
     thread->running = 1;
     thread->webcam = webcam;
-    size_t train_id_len = strnlen(train_id, MAX_INT_LEN);
-    thread->train_id = xcalloc(train_id_len + 1, sizeof(char));
-    strncpy(thread->train_id, train_id, train_id_len);
+    size_t train_id_size = strnlen(train_id, MAX_INT_LEN);
+    thread->train_id = xcalloc(train_id_size + 1, sizeof(char));
+    strncpy(thread->train_id, train_id, train_id_size);
     thread->stop_fd = eventfd(0, EFD_CLOEXEC);
     if (thread->stop_fd == -1) {
         res = LPX_IO;

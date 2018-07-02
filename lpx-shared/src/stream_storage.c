@@ -191,7 +191,7 @@ int8_t storage_read_stream_idx(Storage *storage, char *train_id, FrameMeta ***in
     return res;
 }
 
-int8_t storage_read_frame(Storage *storage, char *train_id, uint32_t frame_idx, uint8_t **buf, size_t *len) {
+int8_t storage_read_frame(Storage *storage, char *train_id, uint32_t frame_idx, uint8_t **buf, size_t *buf_size) {
     int8_t res = LPX_SUCCESS;
 
     char *td = train_dir(storage, train_id);
@@ -219,7 +219,7 @@ int8_t storage_read_frame(Storage *storage, char *train_id, uint32_t frame_idx, 
         goto close_file;
     }
     *buf = xmalloc(size);
-    *len = size;
+    *buf_size = size;
 
     if (fread(*buf, size, 1, frame_f) != 0) {
         res = LPX_IO;
@@ -236,8 +236,8 @@ int8_t storage_read_frame(Storage *storage, char *train_id, uint32_t frame_idx, 
     return res;
 }
 
-static int8_t storage_list_streams(Storage *storage, char ***train_ids, size_t *len) {
-    return list_directory(storage->base_dir, train_ids, len);
+static int8_t storage_list_streams(Storage *storage, char ***train_ids, size_t *train_ids_size) {
+    return list_directory(storage->base_dir, train_ids, train_ids_size);
 }
 
 static int8_t storage_read_frame_meta(Storage *storage, char *train_id, uint32_t idx, FrameMeta **frame_meta) {
@@ -296,14 +296,14 @@ static int8_t storage_read_frame_meta(Storage *storage, char *train_id, uint32_t
 
 int8_t storage_find_stream(Storage *storage, uint64_t time, char **train_id) {
     char **streams;
-    size_t streams_len;
-    int8_t res = list_directory(storage->base_dir, &streams, &streams_len);
+    size_t streams_size;
+    int8_t res = list_directory(storage->base_dir, &streams, &streams_size);
     if (res != LPX_SUCCESS) {
         return LPX_IO;
     }
 
     ssize_t found_train_idx = -1;
-    for (int i = 0; i < streams_len; i++) {
+    for (int i = 0; i < streams_size; i++) {
         FrameMeta **index;
         size_t index_size;
         res = storage_read_stream_idx(storage, streams[i], &index, &index_size);
@@ -321,7 +321,7 @@ int8_t storage_find_stream(Storage *storage, uint64_t time, char **train_id) {
         strcpy(*train_id, streams[found_train_idx]);
     }
 
-    free_array((void **) streams, streams_len);
+    free_array((void **) streams, streams_size);
 
     return LPX_SUCCESS;
 }
@@ -387,14 +387,14 @@ int8_t storage_delete_stream(Storage *storage, char *train_id) {
 
     char *td = train_dir(storage, train_id);
     char **files;
-    size_t files_len;
-    res = list_directory(td, &files, &files_len);
+    size_t files_size;
+    res = list_directory(td, &files, &files_size);
     if (res != LPX_SUCCESS) {
         res = LPX_IO;
         goto free_td;
     }
 
-    for (int i = 0; i < files_len; i++) {
+    for (int i = 0; i < files_size; i++) {
         char *path = append_path(td, files[i]);
         int r = unlink(path);
         free(path);
@@ -406,7 +406,7 @@ int8_t storage_delete_stream(Storage *storage, char *train_id) {
     rmdir(td);
 
     free_files:
-    free_array((void **) files, files_len);
+    free_array((void **) files, files_size);
 
     free_td:
     free(td);
@@ -417,20 +417,20 @@ int8_t storage_delete_stream(Storage *storage, char *train_id) {
 int8_t storage_clear(Storage *storage) {
     int8_t res = 0;
     char **streams;
-    size_t streams_len;
-    res = list_directory(storage->base_dir, &streams, &streams_len);
+    size_t streams_size;
+    res = list_directory(storage->base_dir, &streams, &streams_size);
     if (res != LPX_SUCCESS) {
         return LPX_IO;
     }
 
-    for (int i = 0; i < streams_len; i++) {
+    for (int i = 0; i < streams_size; i++) {
         res = storage_delete_stream(storage, streams[i]);
         if (res != LPX_SUCCESS) {
             break;
         }
     }
 
-    free_array((void **) streams, streams_len);
+    free_array((void **) streams, streams_size);
 
     return res;
 }

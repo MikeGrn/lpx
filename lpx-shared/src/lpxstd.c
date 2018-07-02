@@ -15,9 +15,9 @@ uint64_t tv2ms(struct timeval tv) {
     return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000ULL);
 }
 
-void printArray(char *prefix, const unsigned char *arr, int len) {
+void print_array(char *prefix, const unsigned char *arr, int size) {
     printf("%s", prefix);
-    for (int i = 0; i < len; i++) {
+    for (int i = 0; i < size; i++) {
         printf("0x%02X ", arr[i]);
     }
     printf("\n");
@@ -78,7 +78,7 @@ char *itoa(uint64_t i) {
 }
 
 
-int8_t list_directory(char *dir, char ***children, size_t *len) {
+int8_t list_directory(char *dir, char ***children, size_t *children_size) {
     DIR *dp;
     struct dirent *dir_entry;
 
@@ -97,7 +97,7 @@ int8_t list_directory(char *dir, char ***children, size_t *len) {
         char **res = xcalloc(entries, sizeof(char*));
         lst_to_array(chldrn, (const void **) res);
         *children = res;
-        *len = entries;
+        *children_size = entries;
         lst_free(chldrn);
     } else {
         perror("Couldn't open the directory");

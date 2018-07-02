@@ -39,24 +39,24 @@ VideoStreamBytesStream *stream_open(char **files, size_t files_size) {
     return res;
 }
 
-ssize_t stream_find_frame(FrameMeta **index, size_t index_len, uint64_t time_offset) {
+ssize_t stream_find_frame(FrameMeta **index, size_t index_size, uint64_t time_offset) {
     int64_t stream_base = index[0]->start_time;
-    for (size_t i = 0; i < index_len - 1; i++) {
+    for (size_t i = 0; i < index_size - 1; i++) {
         int64_t frameOffset = index[i]->start_time - stream_base;
         int64_t nextFrameOffset = index[i + 1]->start_time - stream_base;
         if (labs(nextFrameOffset - time_offset) > labs(frameOffset - time_offset)) {
             return i;
         }
     }
-    if (stream_base + time_offset < index[index_len - 1]->end_time) {
-        return index_len - 1;
+    if (stream_base + time_offset < index[index_size - 1]->end_time) {
+        return index_size - 1;
     } else {
         return -1;
     }
 }
 
-ssize_t stream_find_frame_abs(FrameMeta **index, size_t index_len, uint64_t time) {
-    for (size_t i = 0; i < index_len; i++) {
+ssize_t stream_find_frame_abs(FrameMeta **index, size_t index_size, uint64_t time) {
+    for (size_t i = 0; i < index_size; i++) {
         if (index[i]->start_time <= time && index[i]->end_time >= time) {
             return time;
         }
@@ -101,12 +101,22 @@ static int8_t read_part(VideoStreamBytesStream *stream, uint8_t *buf, size_t siz
             return res;
         }
 
+        if (stream->next_file == 1) {
+            // Если открываем первый файл, значит сначала надо записать в "архив" общее кол-во фреймов
+            uint32_t fsize = (uint32_t) stream->files_size;
+            size_t files_cnt_size = sizeof(uint32_t);
+            memcpy(buf, &fsize, files_cnt_size);
+            size -= files_cnt_size;
+            buf += files_cnt_size;
+            *read += files_cnt_size;
+        }
+        
         char *file_name = basename(next_file_path);
-        size_t name_len = strlen(file_name) + 1;
-        memcpy(buf, file_name, name_len);
-        size -= name_len;
-        buf += name_len;
-        *read += name_len;
+        size_t name_size = strlen(file_name) + 1;
+        memcpy(buf, file_name, name_size);
+        size -= name_size;
+        buf += name_size;
+        *read += name_size;
 
         struct stat st;
         int r = stat(next_file_path, &st);
@@ -114,16 +124,16 @@ static int8_t read_part(VideoStreamBytesStream *stream, uint8_t *buf, size_t siz
             return LPX_IO;
         }
         uint64_t fsize = (uint64_t) st.st_size;
-        size_t size_len = sizeof(fsize);
+        size_t fsize_size = sizeof(fsize);
 
-        memcpy(buf, &fsize, size_len);
-        size -= size_len;
-        buf += size_len;
-        *read += size_len;
+        memcpy(buf, &fsize, fsize_size);
+        size -= fsize_size;
+        buf += fsize_size;
+        *read += fsize_size;
     }
 
-    size_t len = fread(buf, sizeof(uint8_t), size, stream->file);
-    if (len < size) {
+    size_t frame_read = fread(buf, sizeof(uint8_t), size, stream->file);
+    if (frame_read < size) {
         if (feof(stream->file)) {
             close_current_file(stream);
         } else {
@@ -131,7 +141,7 @@ static int8_t read_part(VideoStreamBytesStream *stream, uint8_t *buf, size_t siz
         }
     }
 
-    *read += len;
+    *read += frame_read;
 
     return res;
 }

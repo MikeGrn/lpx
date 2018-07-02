@@ -25,13 +25,13 @@ int stringcmp(const void *a, const void *b) {
 
 void test_list_directory(void) {
     char **children;
-    size_t len;
-    list_directory(base_dir, &children, &len);
-    qsort(children, len, sizeof(char *), stringcmp);
-    CU_ASSERT_EQUAL(len, 2);
+    size_t children_size;
+    list_directory(base_dir, &children, &children_size);
+    qsort(children, children_size, sizeof(char *), stringcmp);
+    CU_ASSERT_EQUAL(children_size, 2);
     CU_ASSERT_STRING_EQUAL(children[0], "subdir1");
     CU_ASSERT_STRING_EQUAL(children[1], "subdir2");
-    free_array((void **) children, len);
+    free_array((void **) children, children_size);
 }
 
 void test_read_first_frame_meta(void) {
@@ -85,10 +85,10 @@ void test_stream_streaming(void) {
 
     FILE *out = fopen("/tmp/test.zip", "wb");
     uint8_t *buf = xcalloc(10240, sizeof(uint8_t));
-    ssize_t len = stream_read(stream, buf, 10240);
-    while (len >= 0) {
-        fwrite(buf, sizeof(uint8_t), (size_t) len, out);
-        len = stream_read(stream, buf, 10240);
+    ssize_t read = stream_read(stream, buf, 10240);
+    while (read >= 0) {
+        fwrite(buf, sizeof(uint8_t), (size_t) read, out);
+        read = stream_read(stream, buf, 10240);
     }
     stream_close(stream);
 

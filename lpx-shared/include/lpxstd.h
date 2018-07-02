@@ -17,7 +17,7 @@ uint64_t tv2mks(struct timeval tv);
 
 uint64_t tv2ms(struct timeval tv);
 
-void printArray(char *prefix, const unsigned char *arr, int len);
+void print_array(char *prefix, const unsigned char *arr, int size);
 
 void* xmalloc(size_t n);
 
@@ -37,7 +37,7 @@ int8_t fd_size(int fd, off_t *size);
  */
 char *itoa(uint64_t i);
 
-int8_t list_directory(char *dir, char ***children, size_t *len);
+int8_t list_directory(char *dir, char ***children, size_t *children_size);
 
 void free_array(void **arr, size_t size);
 

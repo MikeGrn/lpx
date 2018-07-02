@@ -17,6 +17,8 @@ const uint16_t STATE_MARKER = 0xA55A;
 
 const uint16_t TRAIN_MARKER = 0xA5A5;
 
+const uint8_t INT_SIZE = 4;
+
 typedef struct Bus {
     libusb_context *ctx;
     libusb_device *dev;
@@ -42,19 +44,19 @@ static void *handle_device(void *b) {
     printf("Bus thread started\n");
     Bus *bus = b;
     unsigned char buffer[8];
-    int len = 0;
+    int int_size = 0;
     while (isRunning(bus)) {
         // Этот вызов блокирует завершение программы на время таймаута
         // Но т.к. использование асинхронного АПИ сильно усложняет логику, а в штатном режиме программа выходить не должна,
         // оставляю эту задержку
-        int ret = libusb_interrupt_transfer(bus->handle, 0x88, buffer, sizeof(buffer), &len, 1000);
+        int ret = libusb_interrupt_transfer(bus->handle, 0x88, buffer, sizeof(buffer), &int_size, 1000);
         if (LIBUSB_ERROR_TIMEOUT == ret) {
             continue;
-        } else if (LIBUSB_SUCCESS != ret) {
+        } else if (LIBUSB_SUCCESS != ret || int_size < INT_SIZE) {
             bus->icb(bus->user_data, BUS_IFACE, -1);
             break;
         }
-        unsigned char intStatus = buffer[4];
+        unsigned char intStatus = buffer[INT_SIZE];
         if (bus->icb) {
             bus->icb(bus->user_data, LPX_SUCCESS, intStatus);
         }
@@ -157,13 +159,12 @@ int32_t bus_init(Bus **bus, void *user_data, interrupt_callback icb) {
     return res;
 }
 
-static int8_t bus_read_response(Bus *bus, void *const buf, uint32_t bufLen, uint16_t marker) {
-    uint32_t respLen = bufLen;
-    unsigned char resp[respLen];
-    memset(resp, 0, respLen);
-    int len = 0;
-    int r = libusb_bulk_transfer(bus->handle, 0x86, resp, respLen, &len, 0);
-    if (LIBUSB_SUCCESS != r || len != respLen) {
+static int8_t bus_read_response(Bus *bus, void *const buf, uint32_t buf_size, uint16_t marker) {
+    unsigned char resp[buf_size];
+    memset(resp, 0, buf_size);
+    int read = 0;
+    int r = libusb_bulk_transfer(bus->handle, 0x86, resp, buf_size, &read, 0);
+    if (LIBUSB_SUCCESS != r || read != buf_size) {
         return BUS_IFACE;
     }
     if (marker != 0 && *((uint16_t*) resp) != marker) {
@@ -171,7 +172,7 @@ static int8_t bus_read_response(Bus *bus, void *const buf, uint32_t bufLen, uint
         return BUS_PROTOCOL;
     }
 
-    memcpy(buf, &resp, bufLen);
+    memcpy(buf, &resp, buf_size);
     return LPX_SUCCESS;
 }
 
@@ -180,32 +181,32 @@ static int32_t bus_read_fpga(Bus *bus, struct TMsbState *const state) {
     req[0] = 0x23;
     req[1] = 0;
     req[2] = sizeof(struct TMsbState) / 2;
-    int len = 0;
-    int32_t r = libusb_bulk_transfer(bus->handle, 0x2, req, sizeof(req), &len, 0);
-    if (LIBUSB_SUCCESS != r || len != sizeof(req)) {
+    int read = 0;
+    int32_t r = libusb_bulk_transfer(bus->handle, 0x2, req, sizeof(req), &read, 0);
+    if (LIBUSB_SUCCESS != r || read != sizeof(req)) {
         return BUS_IFACE;
     }
     r = bus_read_response(bus, state, sizeof(struct TMsbState), STATE_MARKER);
     return r;
 }
 
-static int32_t bus_read_train_data(Bus *bus, void *const buf, uint32_t bufLen, int32_t addr, uint16_t marker) {
+static int32_t bus_read_train_data(Bus *bus, void *const buf, uint32_t bus_size, int32_t addr, uint16_t marker) {
     unsigned char req[10] = {0};
     req[0] = 0x24;
     memcpy(&(req[2]), &addr, sizeof(uint32_t));
-    uint32_t trainSizeDWords = bufLen / sizeof(uint32_t);
+    uint32_t trainSizeDWords = bus_size / sizeof(uint32_t);
     memcpy(&(req[6]), &trainSizeDWords, sizeof(uint32_t));
 
-    int len;
-    int32_t r = libusb_bulk_transfer(bus->handle, 0x2, (unsigned char *) &req, sizeof(req), &len, 0);
-    if (LIBUSB_SUCCESS != r || len != sizeof(req)) {
+    int read = 0;
+    int32_t r = libusb_bulk_transfer(bus->handle, 0x2, (unsigned char *) &req, sizeof(req), &read, 0);
+    if (LIBUSB_SUCCESS != r || read != sizeof(req)) {
         return BUS_IFACE;
     }
-    r = bus_read_response(bus, buf, bufLen, marker);
+    r = bus_read_response(bus, buf, bus_size, marker);
     return r;
 }
 
-int32_t bus_last_train_wheel_time_offsets(Bus *bus, uint64_t **timeOffsets, uint32_t *len) {
+int32_t bus_last_train_wheel_time_offsets(Bus *bus, uint64_t **time_offsets, uint32_t *time_offsets_size) {
     struct TMsbState state = {0};
     int32_t r = bus_read_fpga(bus, &state);
     if (r != LIBUSB_SUCCESS) {
@@ -234,8 +235,8 @@ int32_t bus_last_train_wheel_time_offsets(Bus *bus, uint64_t **timeOffsets, uint
     for (int i = 0; i < hdr.numberOfWheels; i++) {
         wheelOffsets[i] = baseTimeOffsetMks + wheelTimes[i].rightStart;
     }
-    *timeOffsets = wheelOffsets;
-    *len = hdr.numberOfWheels;
+    *time_offsets = wheelOffsets;
+    *time_offsets_size = hdr.numberOfWheels;
 
     return LPX_SUCCESS;
 }

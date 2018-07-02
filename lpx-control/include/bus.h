@@ -22,7 +22,7 @@ typedef void (*interrupt_callback)(void *user_data, int8_t status, int8_t interr
 
 int32_t bus_init(Bus **bus, void *user_data, interrupt_callback icb);
 
-int32_t bus_last_train_wheel_time_offsets(Bus *bus, uint64_t **time_offsets, uint32_t *len);
+int32_t bus_last_train_wheel_time_offsets(Bus *bus, uint64_t **time_offsets, uint32_t *time_offsets_size);
 
 void bus_close(Bus *bus);
 

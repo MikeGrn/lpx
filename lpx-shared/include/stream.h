@@ -17,11 +17,12 @@ typedef struct FrameMeta {
 /**
  * Поток байт фреймов видео-потока.
  * BNF формата потока:
- * поток ::= <eof> | <фрейм>
+ * поток ::= <кол-во фреймов>(<eof> | <фрейм>)
  * eof ::= <0 байт>
+ * кол-во фреймов ::= 32-битное беззнаковое число (little endian)
  * фрейм :: = <имя файла><размер файла><n байт файла>
  * имя файла ::= строка в кодировке ascii с завершающим нулём
- * размер файла ::= 64-битное число (little endian)
+ * размер файла ::= 64-битное беззнаковое число (little endian)
  * n байт файла ::= массив байт длинной n
  */
 typedef struct VideoStreamBytesStream VideoStreamBytesStream;
@@ -32,7 +33,7 @@ typedef struct VideoStreamBytesStream VideoStreamBytesStream;
  * index - длина индекса фреймов
  * time_offset - время в микросекундах относительно момента начала стриминга (времени запроса первого фрейма)
  */
-ssize_t stream_find_frame(FrameMeta **index, size_t index_len, uint64_t time_offset);
+ssize_t stream_find_frame(FrameMeta **index, size_t index_size, uint64_t time_offset);
 
 /**
  * Поиск индекса фрема ближайшего к заданному астрономическому времени
@@ -40,7 +41,7 @@ ssize_t stream_find_frame(FrameMeta **index, size_t index_len, uint64_t time_off
  * index - длина индекса фреймов
  * time_offset - астрономическое время в микросекундах
  */
-ssize_t stream_find_frame_abs(FrameMeta **index, size_t index_len, uint64_t time);
+ssize_t stream_find_frame_abs(FrameMeta **index, size_t index_size, uint64_t time);
 
 /**
  * Инициализирует структура архива потока, содержащего заданные файлы. В случае ошибки возвращает NULL.
