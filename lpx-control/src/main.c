@@ -34,7 +34,26 @@ static void bus_cb(void *user_data, int8_t status, int8_t code) {
     assert(r == sizeof(e));
 }
 
-int main() {
+int main(int argc, char **argv) {
+    char *storage_dir = NULL;
+    int c;
+
+    while ((c = getopt(argc, argv, "s:")) != -1) {
+        switch (c) {
+            case 's':
+                storage_dir = optarg;
+                break;
+            case '?':
+                continue;
+            default:
+                abort();
+        }
+    }
+    if (storage_dir == NULL) {
+        fprintf(stderr, "Usage: lpx-control -s <storage dir>");
+        return 1;
+    }
+
     int r = pipe(events_pipe);
     if (r < 0) {
         perror("Events pipe");
@@ -42,7 +61,7 @@ int main() {
     }
 
     Storage *s;
-    storage_open("/home/azhidkov/tmp/lpx-out", &s);
+    storage_open(storage_dir, &s);
 
     Webcam *w;
     if (LPX_SUCCESS != webcam_init(s, "/dev/video0", &w, NULL, ec)) {

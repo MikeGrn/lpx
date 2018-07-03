@@ -272,9 +272,29 @@ static int answer_to_connection(void *cls, struct MHD_Connection *connection,
     }
 }
 
-int main() {
+int main(int argc, char **argv) {
+    char *storage_dir = NULL;
+    int c;
+
+    opterr = 0;
+    while ((c = getopt(argc, argv, "s:")) != -1) {
+        switch (c) {
+            case 's':
+                storage_dir = optarg;
+                break;
+            case '?':
+                continue;
+            default:
+                abort();
+        }
+    }
+    if (storage_dir == NULL) {
+        fprintf(stderr, "Usage: lpx-server -s <storage dir>");
+        return 1;
+    }
+
     Storage *storage = NULL;
-    storage_open("/home/azhidkov/tmp/lpx-out", &storage);
+    storage_open(storage_dir, &storage);
     LpxServer lpx = {.storage = storage};
     struct MHD_Daemon *daemon;
 
