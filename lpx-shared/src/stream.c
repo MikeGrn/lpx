@@ -157,7 +157,11 @@ ssize_t stream_read(VideoStreamBytesStream *stream, uint8_t *buf, size_t max) {
             assert(available >= 0);
             continue;
         } else if (res == EOF) {
-            return EOF;
+            if (max == available) {
+                return EOF;
+            } else {
+                break;
+            }
         } else if (res == LPX_IO) {
             return STRM_IO;
         }

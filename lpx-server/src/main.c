@@ -176,7 +176,7 @@ static int handle_stream_get(LpxServer *lpx, struct MHD_Connection *connection, 
 
     struct MHD_Response *response;
 
-    response = MHD_create_response_from_callback(MHD_SIZE_UNKNOWN, 1024, stream_reader_callback, stream,
+    response = MHD_create_response_from_callback(MHD_SIZE_UNKNOWN, 10240, stream_reader_callback, stream,
                                                  stream_close_callback);
     ret = MHD_add_response_header(response, "Content-Type", "application/zip");
     if (ret != MHD_YES) {
@@ -193,6 +193,8 @@ static int handle_stream_get(LpxServer *lpx, struct MHD_Connection *connection, 
 
     free_filename:
     free(filename);
+
+    return ret;
 }
 
 static int handle_stream(LpxServer *lpx, struct MHD_Connection *connection, const char *method) {

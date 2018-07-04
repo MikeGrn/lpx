@@ -28,9 +28,9 @@ void test_list_directory(void) {
     size_t children_size;
     list_directory(base_dir, &children, &children_size);
     qsort(children, children_size, sizeof(char *), stringcmp);
-    CU_ASSERT_EQUAL(children_size, 2);
-    CU_ASSERT_STRING_EQUAL(children[0], "subdir1");
-    CU_ASSERT_STRING_EQUAL(children[1], "subdir2");
+    CU_ASSERT_EQUAL(children_size, 3);
+    CU_ASSERT_STRING_EQUAL(children[0], "1529488179409");
+    CU_ASSERT_STRING_EQUAL(children[1], "1529488204470");
     free_array((void **) children, children_size);
 }
 
@@ -38,7 +38,7 @@ void test_read_first_frame_meta(void) {
     Storage *s;
     storage_open(base_dir, &s);
     FrameMeta *fm;
-    storage_read_frame_meta(s, "subdir1", 0, &fm);
+    storage_read_frame_meta(s, "1529488204470", 0, &fm);
     CU_ASSERT_EQUAL(1529488204473095, fm->start_time);
     CU_ASSERT_EQUAL(1529488205138216, fm->end_time);
     free(fm);
@@ -49,7 +49,7 @@ void test_read_last_frame_meta(void) {
     Storage *s;
     storage_open(base_dir, &s);
     FrameMeta *fm;
-    storage_read_frame_meta(s, "subdir1", 29, &fm);
+    storage_read_frame_meta(s, "1529488204470", 29, &fm);
     CU_ASSERT_EQUAL(1529488207551183, fm->start_time);
     CU_ASSERT_EQUAL(1529488207690131, fm->end_time);
     free(fm);
@@ -61,7 +61,7 @@ void test_find_first_stream(void) {
     storage_open(base_dir, &s);
     char *stream;
     storage_find_stream(s, 1529488204473096, &stream);
-    CU_ASSERT_STRING_EQUAL("subdir1", stream);
+    CU_ASSERT_STRING_EQUAL("1529488204470", stream);
     free(stream);
     storage_close(s);
 }
@@ -71,7 +71,7 @@ void test_find_second_stream(void) {
     storage_open(base_dir, &s);
     char *stream;
     storage_find_stream(s, 1529489555016679, &stream);
-    CU_ASSERT_STRING_EQUAL("subdir2", stream);
+    CU_ASSERT_STRING_EQUAL("1529489555016", stream);
     free(stream);
     storage_close(s);
 }
@@ -81,21 +81,27 @@ void test_stream_streaming(void) {
     storage_open(base_dir, &s);
 
     VideoStreamBytesStream *stream = NULL;
-    storage_open_stream(s, "subdir1", 0, &stream);
+    storage_open_stream(s, "1529488179409", 0, &stream);
 
     FILE *out = fopen("/tmp/test.zip", "wb");
-    uint8_t *buf = xcalloc(10240, sizeof(uint8_t));
-    ssize_t read = stream_read(stream, buf, 10240);
+    size_t buf_size = 10240;
+    uint8_t *buf = xcalloc(buf_size, sizeof(uint8_t));
+    ssize_t read = stream_read(stream, buf, buf_size);
+    ssize_t written = 0;
     while (read >= 0) {
-        fwrite(buf, sizeof(uint8_t), (size_t) read, out);
-        read = stream_read(stream, buf, 10240);
+        written += fwrite(buf, sizeof(uint8_t), (size_t) read, out);
+        read = stream_read(stream, buf, buf_size);
     }
+    CU_ASSERT_EQUAL(written, 27648474);
     stream_close(stream);
 
     free(buf);
     fclose(out);
 
     out = fopen("/tmp/test.zip", "rb");
+
+    uint32_t frames_cnt = 0;
+    fread(&frames_cnt, sizeof(uint32_t), 1, out);
 
     char *file_name = xcalloc(7, sizeof(char *));
     fread(file_name, sizeof(char), 7, out);
@@ -111,7 +117,7 @@ void test_stream_streaming(void) {
 
     uint8_t *original = NULL;
     size_t original_len = 0;
-    storage_read_frame(s, "subdir1", 0, &original, &original_len);
+    storage_read_frame(s, "1529488179409", 0, &original, &original_len);
     CU_ASSERT_EQUAL(file_size, original_len)
     for (int i = 0; i < file_size; i++) {
         CU_ASSERT_EQUAL(stream_file[i], original[i])
