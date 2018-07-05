@@ -80,7 +80,7 @@ open_stream_frames(LpxServer *lpx, char *stream_id, List *frame_times_str, Video
         char *null;
         int64_t sframe_time = strtoll(lst_iter_peak(iter), &null, 10);
         if (sframe_time == LLONG_MIN || sframe_time == LLONG_MAX || *null != 0) {
-            *err_msg = "invalid frame_time GET parameter expected";
+            *err_msg = "invalid frame_time GET parameter";
             res = BAD_REQUEST;
             goto free_iter;
         }

@@ -130,6 +130,40 @@ void test_stream_streaming(void) {
     storage_close(s);
 }
 
+void test_stream_streaming_empty(void) {
+    Storage *s;
+    storage_open(base_dir, &s);
+
+    List *empty_list = lst_create();
+    VideoStreamBytesStream *stream = NULL;
+    storage_open_stream_frames(s, "1529488179409", empty_list, &stream);
+
+    FILE *out = fopen("/tmp/test.zip", "wb");
+    size_t buf_size = 10240;
+    uint8_t *buf = xcalloc(buf_size, sizeof(uint8_t));
+    ssize_t read = stream_read(stream, buf, buf_size);
+    ssize_t written = 0;
+    while (read >= 0) {
+        written += fwrite(buf, sizeof(uint8_t), (size_t) read, out);
+        read = stream_read(stream, buf, buf_size);
+    }
+    CU_ASSERT_EQUAL(written, 4);
+    stream_close(stream);
+
+    free(buf);
+    fclose(out);
+
+    out = fopen("/tmp/test.zip", "rb");
+
+    uint32_t frames_cnt = 0;
+    fread(&frames_cnt, sizeof(uint32_t), 1, out);
+    CU_ASSERT_EQUAL(frames_cnt, 0);
+
+    lst_free(empty_list);
+    
+    storage_close(s);
+}
+
 int main(int argc, char **argv) {
     if (argc != 2) {
         fprintf(stderr, "Base dir arg missed");
@@ -157,6 +191,7 @@ int main(int argc, char **argv) {
     ADD_TEST(pSuite, test_find_first_stream)
     ADD_TEST(pSuite, test_find_second_stream)
     ADD_TEST(pSuite, test_stream_streaming);
+    ADD_TEST(pSuite, test_stream_streaming_empty);
 
     /* Run tests using Basic interface */
     CU_basic_run_tests();

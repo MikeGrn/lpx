@@ -12,6 +12,11 @@
 
 typedef struct VideoStreamBytesStream {
     /**
+     * Флаг того, был ли прочитан заголовок (4 байта количества фреймов)
+     */
+    bool header_read;
+
+    /**
      * Абсолютные пути к файлам, которые должны попасть в архив.
      */
     char **file_paths;
@@ -31,6 +36,7 @@ typedef struct VideoStreamBytesStream {
 
 VideoStreamBytesStream *stream_open(char **files, size_t files_size) {
     VideoStreamBytesStream *res = xcalloc(1, sizeof(VideoStreamBytesStream));
+    res->header_read = false;
     res->file_paths = files;
     res->files_size = files_size;
     res->next_file = 0;
@@ -93,6 +99,17 @@ static int8_t open_next_file(VideoStreamBytesStream *stream, char **next_file_na
  */
 static int8_t read_part(VideoStreamBytesStream *stream, uint8_t *buf, size_t size, size_t *read) {
     *read = 0;
+
+    if (stream->header_read == false) {
+        uint32_t fsize = (uint32_t) stream->files_size;
+        size_t files_cnt_size = sizeof(uint32_t);
+        memcpy(buf, &fsize, files_cnt_size);
+        size -= files_cnt_size;
+        buf += files_cnt_size;
+        *read += files_cnt_size;
+        stream->header_read = true;
+    }
+
     int8_t res = LPX_SUCCESS;
     if (stream->file == NULL) {
         char *next_file_path;
@@ -101,16 +118,6 @@ static int8_t read_part(VideoStreamBytesStream *stream, uint8_t *buf, size_t siz
             return res;
         }
 
-        if (stream->next_file == 1) {
-            // Если открываем первый файл, значит сначала надо записать в "архив" общее кол-во фреймов
-            uint32_t fsize = (uint32_t) stream->files_size;
-            size_t files_cnt_size = sizeof(uint32_t);
-            memcpy(buf, &fsize, files_cnt_size);
-            size -= files_cnt_size;
-            buf += files_cnt_size;
-            *read += files_cnt_size;
-        }
-        
         char *file_name = basename(next_file_path);
         size_t name_size = strlen(file_name) + 1;
         memcpy(buf, file_name, name_size);
@@ -151,10 +158,10 @@ ssize_t stream_read(VideoStreamBytesStream *stream, uint8_t *buf, size_t max) {
     while (available > 0) {
         size_t read = 0;
         int8_t res = read_part(stream, buf, available, &read);
+        available -= read;
+        assert(available >= 0);
         if (res == LPX_SUCCESS) {
             buf += read;
-            available -= read;
-            assert(available >= 0);
             continue;
         } else if (res == EOF) {
             if (max == available) {
