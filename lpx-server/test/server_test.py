@@ -153,4 +153,6 @@ class TestLpxServer(unittest.TestCase):
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         TestLpxServer.STORAGE_DIR = sys.argv.pop()
+    else:
+        print("Server's storage dir parameter missed")
     unittest.main()

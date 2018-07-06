@@ -127,6 +127,7 @@ void test_stream_streaming(void) {
     free(stream_file);
     free(original);
 
+    fclose(out);
     storage_close(s);
 }
 
@@ -160,7 +161,8 @@ void test_stream_streaming_empty(void) {
     CU_ASSERT_EQUAL(frames_cnt, 0);
 
     lst_free(empty_list);
-    
+
+    fclose(out);
     storage_close(s);
 }
 

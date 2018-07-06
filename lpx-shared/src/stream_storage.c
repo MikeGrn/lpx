@@ -6,7 +6,6 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <dirent.h>
-#include <zip.h>
 #include "../include/stream_storage.h"
 #include "../include/lpxstd.h"
 
