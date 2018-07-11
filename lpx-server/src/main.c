@@ -6,12 +6,12 @@
 #include <microhttpd.h>
 #include <memory.h>
 #include <stdlib.h>
-#include <zconf.h>
 #include <stream_storage.h>
 #include <lpxstd.h>
 #include <fcntl.h>
 #include <list.h>
 #include <assert.h>
+#include <limits.h>
 
 #define PORT 8888
 

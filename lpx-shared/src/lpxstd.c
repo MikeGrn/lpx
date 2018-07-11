@@ -7,10 +7,16 @@
 #include <dirent.h>
 #include <list.h>
 
+/*
+ * Переводит значение struct timeval в микросекунды.
+ */
 uint64_t tv2mks(struct timeval tv) {
     return tv.tv_sec * 1000000ULL + tv.tv_usec;
 }
 
+/*
+ * Переводит значение struct timeval в миллисекунды.
+ */
 uint64_t tv2ms(struct timeval tv) {
     return (tv.tv_sec * 1000ULL) + (tv.tv_usec / 1000ULL);
 }
