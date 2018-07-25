@@ -36,12 +36,16 @@ static void bus_cb(void *user_data, int8_t status, int8_t code) {
 
 int main(int argc, char **argv) {
     char *storage_dir = NULL;
+    char *dev = "/dev/video0";
     int c;
 
-    while ((c = getopt(argc, argv, "s:")) != -1) {
+    while ((c = getopt(argc, argv, "s:d:")) != -1) {
         switch (c) {
             case 's':
                 storage_dir = optarg;
+                break;
+            case 'd':
+                dev = optarg;
                 break;
             case '?':
                 continue;
@@ -50,7 +54,7 @@ int main(int argc, char **argv) {
         }
     }
     if (storage_dir == NULL) {
-        fprintf(stderr, "Usage: lpx-control -s <storage dir>");
+        fprintf(stderr, "Usage: lpx-control -s <storage dir> [-d <device>]");
         return 1;
     }
 
@@ -64,16 +68,16 @@ int main(int argc, char **argv) {
     storage_open(storage_dir, &s);
 
     Webcam *w;
-    if (LPX_SUCCESS != webcam_init(s, "/dev/video0", &w, NULL, ec)) {
+    if (LPX_SUCCESS != webcam_init(s, dev, &w, NULL, ec)) {
         printf("webcam error\n");
         goto close_storage;
     }
 
-    Bus *b;
-    if (LPX_SUCCESS != bus_init(&b, NULL, bus_cb)) {
-        printf("bus error\n");
-        goto close_webcam;
-    }
+    struct timeval time;
+    gettimeofday(&time, NULL);
+    char *train_id = itoa(tv2ms(time));
+    printf("Starting streaming\n");
+    r = webcam_start_stream(w, train_id);
 
     struct pollfd pfds[2];
     // поллим стандартный ввод, для корректного завершения программы по нажатию любой клавиши
@@ -82,7 +86,6 @@ int main(int argc, char **argv) {
     pfds[1].fd = events_pipe[0];
     pfds[1].events = POLLIN;
 
-    char *train_id;
     while (1) {
         Event e = {0};
         r = poll(pfds, ALEN(pfds), -1);
@@ -99,6 +102,8 @@ int main(int argc, char **argv) {
             break;
         }
 
+        // сейчас эти события никогда не прилетают
+        // раньше они прилетали от БУСа, а в будщем планируется, что они будут прилитать от чего-то по GPIO
         if (e.code == BUS_INT_TRAIN_IN) {
             struct timeval time;
             gettimeofday(&time, NULL);
@@ -116,9 +121,6 @@ int main(int argc, char **argv) {
             free(train_id);
         }
     }
-
-    close_bus:
-    bus_close(b);
 
     close_webcam:
     webcam_close(w);
