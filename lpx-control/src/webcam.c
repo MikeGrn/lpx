@@ -67,8 +67,8 @@ int8_t webcam_init(Storage *storage, char *device, Webcam **webcam, void *user_d
     struct v4l2_format format = {0};
     format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     format.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
-    format.fmt.pix.width = 640;
-    format.fmt.pix.height = 480;
+    format.fmt.pix.width = 1920;
+    format.fmt.pix.height = 1080;
     format.fmt.pix.field = V4L2_FIELD_NONE;
     if (ioctl(w->webcam_fd, VIDIOC_S_FMT, &format) < 0) {
         res = LPX_IO;
@@ -254,18 +254,18 @@ int8_t webcam_start_stream(Webcam *webcam, char *train_id) {
         goto free_thread;
     }
 
-    if (-1 == ioctl(webcam->webcam_fd, VIDIOC_STREAMON, &webcam->buffer_info.type)) {
-        res = LPX_IO;
-        perror("Start Capture");
-        goto destroy_mutex;
-    }
-
     r = gettimeofday(&thread->frame_req_time, NULL);
     assert(r == 0);
     if (ioctl(webcam->webcam_fd, VIDIOC_QBUF, &webcam->buffer_info) < 0) {
         res = LPX_IO;
-        perror("Start Capture");
+        perror("Start Capture qbuf");
         goto stop_streaming;
+    }
+
+    if (-1 == ioctl(webcam->webcam_fd, VIDIOC_STREAMON, &webcam->buffer_info.type)) {
+        res = LPX_IO;
+        perror("Start Capture streamon");
+        goto destroy_mutex;
     }
 
     pthread_t tid;
