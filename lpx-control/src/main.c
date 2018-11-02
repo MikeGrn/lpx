@@ -8,27 +8,27 @@
 #include "list.h"
 #include "lpxstd.h"
 #include "stream_storage.h"
-#include "../include/webcam.h"
+#include "../include/camera.h"
 #include "unistd.h"
-#include "../include/bus.h"
+#include "../include/train_sensor.h"
 
 /*
- * Структура событий (прерываний) БУСа
+ * Структура событий сенсора поезада
  */
 typedef struct Event {
-    int8_t status; // статус чтения прерывания, 0 - ок, 3 - ошибка
-    int8_t code; // код прерывания, 0 - поезд ушёл, 1 - сигнал дальнего оповещения, 3 - прошло первое колесо
+    int8_t status; // статус чтения сенсора, 0 - ок, 3 - ошибка
+    int8_t code; // статус поезда, 0 - поезд ушёл, 1 - сигнал дальнего оповещения
 } Event;
 
-// пайп передачи данных от потка БУСа в главный поток
+// пайп передачи данных от потка сенсора в главный поток
 static int events_pipe[2];
 
 static void ec(void *user_data, int errcode) {
-    fprintf(stderr, "Webcam error, user_data: %s, code: %d\n", (char *) user_data, errcode);
+    fprintf(stderr, "Camera error, user_data: %s, code: %d\n", (char *) user_data, errcode);
 }
 
-static void bus_cb(void *user_data, int8_t status, int8_t code) {
-    printf("bus event\n");
+static void train_sensor_cb(void *user_data, int8_t status, int8_t code) {
+    printf("train sensor event\n");
     Event e = {.status = status, .code = code};
     ssize_t r = write(events_pipe[1], &e, sizeof(e));
     assert(r == sizeof(e));
@@ -67,17 +67,22 @@ int main(int argc, char **argv) {
     Storage *s;
     storage_open(storage_dir, &s);
 
-    Webcam *w;
-    if (LPX_SUCCESS != webcam_init(s, dev, &w, NULL, ec)) {
+    Camera *w;
+/*    if (LPX_SUCCESS != camera_init(s, dev, &w, NULL, ec)) {
         printf("webcam error\n");
         goto close_storage;
-    }
+    }*/
 
+    TrainSensor *ts;
+    if (LPX_SUCCESS != train_sensor_init(&ts, NULL, train_sensor_cb)) {
+        printf("train sensor error\n");
+        goto close_camera;
+    }
     struct timeval time;
     gettimeofday(&time, NULL);
     char *train_id = itoa(tv2ms(time));
-    printf("Starting streaming\n");
-    r = webcam_start_stream(w, train_id);
+/*    printf("Starting streaming\n");
+    r = camera_start_stream(w, train_id);*/
 
     struct pollfd pfds[2];
     // поллим стандартный ввод, для корректного завершения программы по нажатию любой клавиши
@@ -104,26 +109,32 @@ int main(int argc, char **argv) {
 
         // сейчас эти события никогда не прилетают
         // раньше они прилетали от БУСа, а в будщем планируется, что они будут прилитать от чего-то по GPIO
-        if (e.code == BUS_INT_TRAIN_IN) {
+        if (e.code == TS_INT_TRAIN_IN) {
             struct timeval time;
             gettimeofday(&time, NULL);
             train_id = itoa(tv2ms(time));
             printf("Starting streaming\n");
-            r = webcam_start_stream(w, train_id);
+            //r = camera_start_stream(w, train_id);
             if (r != LPX_SUCCESS) {
                 printf("Streaming error: %d\n", r);
             }
-        } else if (e.code == BUS_INT_TRAIN_LEAVE) {
-            if (!webcam_streaming(w)) {
+        } else if (e.code == TS_INT_TRAIN_LEAVE) {
+/*            if (!camera_streaming(w)) {
                 continue;
             }
-            webcam_stop_stream(w);
-            free(train_id);
+            camera_stop_stream(w);*/
+            if (train_id) {
+                free(train_id);
+                train_id = NULL;
+            }
         }
     }
 
-    close_webcam:
-    webcam_close(w);
+    close_train_sensor:
+    train_sensor_close(ts);
+
+    close_camera:
+    //camera_close(w);
 
     close_storage:
     storage_close(s);

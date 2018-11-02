@@ -5,7 +5,7 @@
 #include <memory.h>
 #include <stdbool.h>
 #include <pthread.h>
-#include "../include/webcam.h"
+#include "../include/camera.h"
 #include "lpxstd.h"
 #include "list.h"
 #include <unistd.h>
@@ -15,7 +15,7 @@
 #include <sys/ioctl.h>
 
 typedef struct Thread {
-    Webcam *webcam;
+    Camera *webcam;
     char *train_id;
     bool running;
     pthread_mutex_t running_mutex;
@@ -25,7 +25,7 @@ typedef struct Thread {
     int stop_fd; // дескриптор файла событий, через который передаётся сигнал на завершение работы потока
 } Thread;
 
-typedef struct Webcam {
+typedef struct Camera {
     Storage *storage;
     void *user_data; // пользовательские данные, передаваемые в каллбэк
     error_callback ecb;
@@ -34,13 +34,13 @@ typedef struct Webcam {
     struct v4l2_buffer buffer_info;
     Thread *thread;
     pthread_t tid;
-} Webcam;
+} Camera;
 
-int8_t webcam_init(Storage *storage, char *device, Webcam **webcam, void *user_data, error_callback ecb) {
+int8_t camera_init(Storage *storage, char *device, Camera **webcam, void *user_data, error_callback ecb) {
     int8_t res = LPX_SUCCESS;
-    *webcam = xmalloc(sizeof(Webcam));
-    memset(*webcam, 0, sizeof(Webcam));
-    Webcam *w = *webcam;
+    *webcam = xmalloc(sizeof(Camera));
+    memset(*webcam, 0, sizeof(Camera));
+    Camera *w = *webcam;
     w->storage = storage;
     w->ecb = ecb;
     w->user_data = user_data;
@@ -53,13 +53,13 @@ int8_t webcam_init(Storage *storage, char *device, Webcam **webcam, void *user_d
 
     struct v4l2_capability cap = {0};
     if (ioctl(w->webcam_fd, VIDIOC_QUERYCAP, &cap) < 0) {
-        res = WC_CAP;
+        res = CAM_CAP;
         perror("VIDIOC_QUERYCAP");
         goto close_webcam;
     }
 
     if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
-        res = WC_CAP;
+        res = CAM_CAP;
         fprintf(stderr, "The device does not handle single-planar video capture.\n");
         goto close_webcam;
     }
@@ -141,7 +141,7 @@ static void stop(Thread *thread) {
 
 static void *webcam_handle_stream(void *t) {
     Thread *thread = t;
-    Webcam *webcam = thread->webcam;
+    Camera *webcam = thread->webcam;
     thread->frame_index = 0;
     List *frames = lst_create();
 
@@ -228,10 +228,10 @@ static void free_thread(Thread *thread) {
     free(thread);
 }
 
-int8_t webcam_start_stream(Webcam *webcam, char *train_id) {
+int8_t camera_start_stream(Camera *webcam, char *train_id) {
     int8_t res = LPX_SUCCESS;
     if (LPX_SUCCESS != storage_prepare(webcam->storage, train_id)) {
-        return WC_STRG;
+        return CAM_STRG;
     }
     Thread *thread = xmalloc(sizeof(Thread));
     memset(thread, 0, sizeof(Thread));
@@ -249,7 +249,7 @@ int8_t webcam_start_stream(Webcam *webcam, char *train_id) {
     }
     int r = pthread_mutex_init(&thread->running_mutex, NULL);
     if (0 != r) {
-        res = WC_THREAD;
+        res = CAM_THREAD;
         fprintf(stderr, "Could not initialize running_mutex, errcode: %d\n", r);
         goto free_thread;
     }
@@ -271,7 +271,7 @@ int8_t webcam_start_stream(Webcam *webcam, char *train_id) {
     pthread_t tid;
     r = pthread_create(&tid, NULL, webcam_handle_stream, thread);
     if (0 != r) {
-        res = WC_THREAD;
+        res = CAM_THREAD;
         fprintf(stderr, "Could not create thread, errcode: %d\n", r);
         goto stop_streaming;
     }
@@ -297,7 +297,7 @@ int8_t webcam_start_stream(Webcam *webcam, char *train_id) {
     return res;
 }
 
-int8_t webcam_stop_stream(Webcam *webcam) {
+int8_t camera_stop_stream(Camera *webcam) {
     if (webcam->thread == NULL) {
         printf("not streaming ignore stop request\n");
         return LPX_SUCCESS;
@@ -312,14 +312,16 @@ int8_t webcam_stop_stream(Webcam *webcam) {
     assert(r == 0);
     free_thread(webcam->thread);
     webcam->thread = NULL;
+
+    return LPX_SUCCESS;
 }
 
-bool webcam_streaming(Webcam *webcam) {
+bool camera_streaming(Camera *webcam) {
     return webcam->thread != NULL;
 }
 
-void webcam_close(Webcam *webcam) {
-    webcam_stop_stream(webcam);
+void camera_close(Camera *webcam) {
+    camera_stop_stream(webcam);
     munmap(webcam->frame_buffer, webcam->buffer_info.length);
     close(webcam->webcam_fd);
     free(webcam);
