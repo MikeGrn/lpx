@@ -128,6 +128,7 @@ int main(int argc, char **argv) {
                 train_id = NULL;
             }
         }
+        printf("\n");
     }
 
     close_train_sensor:

@@ -7,6 +7,7 @@
 #include <sys/eventfd.h>
 #include <zconf.h>
 #include <fcntl.h>
+#include <sys/time.h>
 #include "../include/train_sensor.h"
 #include "lpxstd.h"
 #include "../include/wiringPi.h"
@@ -41,11 +42,12 @@ static void handle_interrupt() {
 static void *handle_device(void *ts) {
     printf("TrainSensor thread started\n");
     TrainSensor *train_sensor = ts;
-    wiringPiISR(0, INT_EDGE_RISING, handle_interrupt);
+    wiringPiISR(0, INT_EDGE_BOTH, handle_interrupt);
 
     struct pollfd pfds[1];
     pfds[0].fd = interrupt_pipe[0];
     pfds[0].events = POLLIN;
+    struct timeval last_event = {0};
     while (true) {
 
         poll(pfds, 1, -1);
@@ -67,11 +69,21 @@ static void *handle_device(void *ts) {
             value = 0;
         }
 
+        printf("read %d ", value);
+        struct timeval now;
+        gettimeofday(&now, NULL);
+        if (tv2mks(now) - tv2mks(last_event) < 100000) {
+            printf(" and ignore it\n\n");
+            continue;
+        } else {
+            printf(" and send it\n");
+            last_event = now;
+        }
+
         if (train_sensor->icb) {
             train_sensor->icb(train_sensor->user_data, LPX_SUCCESS, value);
         }
 
-        sleep(1);
     }
     return NULL;
 }
