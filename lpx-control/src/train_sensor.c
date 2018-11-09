@@ -5,9 +5,9 @@
 #include <assert.h>
 #include <poll.h>
 #include <sys/eventfd.h>
-#include <zconf.h>
 #include <fcntl.h>
 #include <sys/time.h>
+#include <unistd.h>
 #include "../include/train_sensor.h"
 #include "lpxstd.h"
 #include "../include/wiringPi.h"

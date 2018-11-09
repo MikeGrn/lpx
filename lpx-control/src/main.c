@@ -67,11 +67,11 @@ int main(int argc, char **argv) {
     Storage *s;
     storage_open(storage_dir, &s);
 
-    Camera *w;
-/*    if (LPX_SUCCESS != camera_init(s, dev, &w, NULL, ec)) {
-        printf("webcam error\n");
+    Camera *cam;
+    if (LPX_SUCCESS != camera_init(s, dev, &cam, NULL, ec)) {
+        printf("camera error\n");
         goto close_storage;
-    }*/
+    }
 
     TrainSensor *ts;
     if (LPX_SUCCESS != train_sensor_init(&ts, NULL, train_sensor_cb)) {
@@ -114,15 +114,15 @@ int main(int argc, char **argv) {
             gettimeofday(&time, NULL);
             train_id = itoa(tv2ms(time));
             printf("Starting streaming\n");
-            //r = camera_start_stream(w, train_id);
+            r = camera_start_stream(cam, train_id);
             if (r != LPX_SUCCESS) {
                 printf("Streaming error: %d\n", r);
             }
         } else if (e.code == TS_INT_TRAIN_LEAVE) {
-/*            if (!camera_streaming(w)) {
+            if (!camera_streaming(cam)) {
                 continue;
             }
-            camera_stop_stream(w);*/
+            camera_stop_stream(cam);
             if (train_id) {
                 free(train_id);
                 train_id = NULL;
@@ -135,7 +135,7 @@ int main(int argc, char **argv) {
     train_sensor_close(ts);
 
     close_camera:
-    //camera_close(w);
+    camera_close(cam);
 
     close_storage:
     storage_close(s);

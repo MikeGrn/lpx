@@ -68,7 +68,7 @@ storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const 
 
     if (access(td, F_OK) != 0) {
         res = STRG_NOT_FOUND;
-        goto cleanup;
+        goto free_td;
     }
 
     char *fp = frame_path(td, frame_idx);
@@ -76,7 +76,7 @@ storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const 
     FILE *frame_f = fopen(fp, "w+");
     if (frame_f == NULL) {
         res = LPX_IO;
-        goto cleanup;
+        goto free_fp;
     }
 
     if (fwrite(buf, 1, size, frame_f) == -1) {
@@ -87,9 +87,11 @@ storage_store_frame(Storage *storage, char *train_id, uint32_t frame_idx, const 
     close_file:
     fclose(frame_f);
 
-    cleanup:
-    free(td);
+    free_fp:
     free(fp);
+
+    free_td:
+    free(td);
 
     return res;
 }

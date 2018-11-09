@@ -1,5 +1,4 @@
 #include <fcntl.h>
-#include <linux/videodev2.h>
 #include <sys/mman.h>
 #include <sys/eventfd.h>
 #include <memory.h>
@@ -13,9 +12,11 @@
 #include <errno.h>
 #include <poll.h>
 #include <sys/ioctl.h>
+#include <sys/time.h>
+#include "../include/raspiraw.h"
 
 typedef struct Thread {
-    Camera *webcam;
+    Camera *camera;
     char *train_id;
     bool running;
     pthread_mutex_t running_mutex;
@@ -25,93 +26,45 @@ typedef struct Thread {
     int stop_fd; // дескриптор файла событий, через который передаётся сигнал на завершение работы потока
 } Thread;
 
+
 typedef struct Camera {
     Storage *storage;
+    Raspiraw *raspiraw;
     void *user_data; // пользовательские данные, передаваемые в каллбэк
     error_callback ecb;
     int webcam_fd;
     uint8_t *frame_buffer;
-    struct v4l2_buffer buffer_info;
     Thread *thread;
     pthread_t tid;
 } Camera;
 
-int8_t camera_init(Storage *storage, char *device, Camera **webcam, void *user_data, error_callback ecb) {
+int8_t camera_init(Storage *storage, char *device, Camera **camera, void *user_data, error_callback ecb) {
     int8_t res = LPX_SUCCESS;
-    *webcam = xmalloc(sizeof(Camera));
-    memset(*webcam, 0, sizeof(Camera));
-    Camera *w = *webcam;
-    w->storage = storage;
-    w->ecb = ecb;
-    w->user_data = user_data;
+    *camera = xmalloc(sizeof(Camera));
+    memset(*camera, 0, sizeof(Camera));
+    Raspiraw *raspiraw;
+    raspiraw_init(&raspiraw, storage);
+    Camera *c = *camera;
+    c->storage = storage;
+    c->ecb = ecb;
+    c->user_data = user_data;
+    c->raspiraw = raspiraw;
 
-    if ((w->webcam_fd = open(device, O_RDWR)) < 0) {
+/*    if ((w->webcam_fd = open(device, O_RDWR)) < 0) {
         res = LPX_IO;
         perror("open");
         goto error;
-    }
-
-    struct v4l2_capability cap = {0};
-    if (ioctl(w->webcam_fd, VIDIOC_QUERYCAP, &cap) < 0) {
-        res = CAM_CAP;
-        perror("VIDIOC_QUERYCAP");
-        goto close_webcam;
-    }
-
-    if (!(cap.capabilities & V4L2_CAP_VIDEO_CAPTURE)) {
-        res = CAM_CAP;
-        fprintf(stderr, "The device does not handle single-planar video capture.\n");
-        goto close_webcam;
-    }
-
-    struct v4l2_format format = {0};
-    format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    format.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
-    format.fmt.pix.width = 1920;
-    format.fmt.pix.height = 1080;
-    format.fmt.pix.field = V4L2_FIELD_NONE;
-    if (ioctl(w->webcam_fd, VIDIOC_S_FMT, &format) < 0) {
-        res = LPX_IO;
-        perror("VIDIOC_S_FMT");
-        goto close_webcam;
-    }
-
-    struct v4l2_requestbuffers buf_request = {0};
-    buf_request.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    buf_request.memory = V4L2_MEMORY_MMAP;
-    buf_request.count = 1;
-    if (ioctl(w->webcam_fd, VIDIOC_REQBUFS, &buf_request) < 0) {
-        res = LPX_IO;
-        perror("VIDIOC_REQBUFS");
-        goto close_webcam;
-    }
-
-    w->buffer_info.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    w->buffer_info.memory = V4L2_MEMORY_MMAP;
-    w->buffer_info.index = 0;
-    if (ioctl(w->webcam_fd, VIDIOC_QUERYBUF, &w->buffer_info) < 0) {
-        res = LPX_IO;
-        perror("VIDIOC_QUERYBUF");
-        goto close_webcam;
-    }
-
-    w->frame_buffer = mmap(NULL, w->buffer_info.length, PROT_READ | PROT_WRITE, MAP_SHARED, w->webcam_fd,
-                           w->buffer_info.m.offset);
-    if (w->frame_buffer == MAP_FAILED) {
-        res = LPX_IO;
-        perror("mmap");
-        goto close_webcam;
-    }
+    }*/
 
     return res;
 
     // завершение по ошибке
     close_webcam:
-    close(w->webcam_fd);
+    close(c->webcam_fd);
 
     error:
-    free(*webcam);
-    *webcam = NULL;
+    free(*camera);
+    *camera = NULL;
 
     return res;
 }
@@ -141,43 +94,37 @@ static void stop(Thread *thread) {
 
 static void *webcam_handle_stream(void *t) {
     Thread *thread = t;
-    Camera *webcam = thread->webcam;
+    Camera *camera = thread->camera;
     thread->frame_index = 0;
     List *frames = lst_create();
 
-    struct pollfd pfd[2];
-    pfd[0].fd = webcam->webcam_fd;
+    struct pollfd pfd[1];
+    pfd[0].fd = thread->stop_fd;
     pfd[0].events = POLLIN;
-    pfd[1].fd = thread->stop_fd;
-    pfd[1].events = POLLIN;
 
+    raspiraw_start(camera->raspiraw);
     printf("started\n");
     while (isRunning(thread)) {
         int pr = poll(pfd, ALEN(pfd), -1);
         if (pr < 0) {
-            webcam->ecb(webcam->user_data, errno);
-            perror("Poll webcam");
+            camera->ecb(camera->user_data, errno);
+            perror("Poll camera");
             break;
         }
         if (pfd[0].revents != pfd[0].events) {
             // позвали stop, isRunning вернёт true и поток завершится
             continue;
         }
-        if (-1 == ioctl(webcam->webcam_fd, VIDIOC_DQBUF, &webcam->buffer_info)) {
-            webcam->ecb(webcam->user_data, errno);
-            perror("Retrieving Frame");
-            break;
-        }
         int r = gettimeofday(&thread->frame_ready_time, NULL);
         assert(r == 0);
 
-        r = storage_store_frame(webcam->storage, thread->train_id, thread->frame_index++, webcam->frame_buffer,
-                                webcam->buffer_info.length);
+/*        r = storage_store_frame(camera->storage, thread->train_id, thread->frame_index++, camera->frame_buffer,
+                                camera->buffer_info.length);
         if (LPX_SUCCESS != r) {
             if (errno != 0) {
                 perror("Frame writing");
             }
-            webcam->ecb(webcam->user_data, r);
+            camera->ecb(camera->user_data, r);
             fprintf(stderr, "Stream storage failed, errcode: %d\n", r);
             break;
         }
@@ -188,30 +135,21 @@ static void *webcam_handle_stream(void *t) {
         frame->end_time = tv2mks(thread->frame_ready_time);
         lst_append(frames, frame);
 
-        r = gettimeofday(&thread->frame_req_time, NULL);
-        assert(r == 0);
-        if (ioctl(webcam->webcam_fd, VIDIOC_QBUF, &webcam->buffer_info) < 0) {
-            webcam->ecb(webcam->user_data, errno);
-            perror("VIDIOC_QBUF");
-            break;
-        }
+        r = gettimeofday(&thread->frame_req_time, NULL);*/
     }
 
-    if (ioctl(webcam->webcam_fd, VIDIOC_STREAMOFF, &webcam->buffer_info.type) < 0) {
-        webcam->ecb(webcam->user_data, errno);
-        perror("VIDIOC_STREAMOFF");
-    }
+    raspiraw_stop(camera->raspiraw);
 
     size_t frames_cnt = lst_size(frames);
     FrameMeta **frame_array = frames_cnt == 0 ? NULL : xcalloc(frames_cnt, sizeof(FrameMeta *));
     if (frames_cnt > 0) {
         lst_to_array(frames, (const void **) frame_array);
-        int8_t r = storage_store_stream_idx(webcam->storage, thread->train_id, frame_array, frames_cnt);
+        int8_t r = storage_store_stream_idx(camera->storage, thread->train_id, frame_array, frames_cnt);
         if (LPX_SUCCESS != r) {
             if (errno != 0) {
                 perror("Stream index writing");
             }
-            webcam->ecb(webcam->user_data, r);
+            camera->ecb(camera->user_data, r);
             fprintf(stderr, "Stream storage failed, errcode: %d\n", r);
         }
     }
@@ -228,16 +166,17 @@ static void free_thread(Thread *thread) {
     free(thread);
 }
 
-int8_t camera_start_stream(Camera *webcam, char *train_id) {
+int8_t camera_start_stream(Camera *camera, char *train_id) {
     int8_t res = LPX_SUCCESS;
-    if (LPX_SUCCESS != storage_prepare(webcam->storage, train_id)) {
+    if (LPX_SUCCESS != storage_prepare(camera->storage, train_id)) {
         return CAM_STRG;
     }
     Thread *thread = xmalloc(sizeof(Thread));
     memset(thread, 0, sizeof(Thread));
-    webcam->thread = thread;
+    camera->thread = thread;
     thread->running = 1;
-    thread->webcam = webcam;
+    thread->camera = camera;
+    raspiraw_set_train_id(camera->raspiraw, train_id);
     size_t train_id_size = strnlen(train_id, MAX_INT_LEN);
     thread->train_id = xcalloc(train_id_size + 1, sizeof(char));
     strncpy(thread->train_id, train_id, train_id_size);
@@ -255,18 +194,6 @@ int8_t camera_start_stream(Camera *webcam, char *train_id) {
     }
 
     r = gettimeofday(&thread->frame_req_time, NULL);
-    assert(r == 0);
-    if (ioctl(webcam->webcam_fd, VIDIOC_QBUF, &webcam->buffer_info) < 0) {
-        res = LPX_IO;
-        perror("Start Capture qbuf");
-        goto stop_streaming;
-    }
-
-    if (-1 == ioctl(webcam->webcam_fd, VIDIOC_STREAMON, &webcam->buffer_info.type)) {
-        res = LPX_IO;
-        perror("Start Capture streamon");
-        goto destroy_mutex;
-    }
 
     pthread_t tid;
     r = pthread_create(&tid, NULL, webcam_handle_stream, thread);
@@ -275,24 +202,21 @@ int8_t camera_start_stream(Camera *webcam, char *train_id) {
         fprintf(stderr, "Could not create thread, errcode: %d\n", r);
         goto stop_streaming;
     }
-    webcam->tid = tid;
+    camera->tid = tid;
 
     return res;
 
     // завершение по ошибке
     stop_streaming:
-    if (ioctl(webcam->webcam_fd, VIDIOC_STREAMOFF, &webcam->buffer_info.type) < 0) {
-        perror("VIDIOC_STREAMOFF");
-    }
 
     destroy_mutex:
     r = pthread_mutex_destroy(&thread->running_mutex);
     assert(r == 0);
 
     free_thread:
-    free_thread(webcam->thread);
-    webcam->thread = NULL;
-    webcam->tid = 0;
+    free_thread(camera->thread);
+    camera->thread = NULL;
+    camera->tid = 0;
 
     return res;
 }
@@ -316,13 +240,12 @@ int8_t camera_stop_stream(Camera *webcam) {
     return LPX_SUCCESS;
 }
 
-bool camera_streaming(Camera *webcam) {
-    return webcam->thread != NULL;
+bool camera_streaming(Camera *camera) {
+    return camera->thread != NULL;
 }
 
-void camera_close(Camera *webcam) {
-    camera_stop_stream(webcam);
-    munmap(webcam->frame_buffer, webcam->buffer_info.length);
-    close(webcam->webcam_fd);
-    free(webcam);
+void camera_close(Camera *camera) {
+    camera_stop_stream(camera);
+    close(camera->webcam_fd);
+    free(camera);
 }
