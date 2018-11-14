@@ -13,18 +13,18 @@
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
+#include <include/converter.h>
 #include "../include/raspiraw.h"
 
-typedef struct Thread {
-    Camera *camera;
+typedef struct CaptureSession {
+    Storage *storage;
     char *train_id;
-    bool running;
-    pthread_mutex_t running_mutex;
     uint32_t frame_index; // порядковый номер следующего фрейма
-    struct timeval frame_req_time; // системное (астрономическое) время запроса следующего фрейма
-    struct timeval frame_ready_time; // системное (астрономическое) время получения текущего фрейма
-    int stop_fd; // дескриптор файла событий, через который передаётся сигнал на завершение работы потока
-} Thread;
+    struct timeval frame_req_time; // системное (астрономическое) время запроса фрейма
+    void *user_data; // пользовательские данные, передаваемые в каллбэк
+    error_callback ecb;
+    List *frames;
+} CaptureSession;
 
 
 typedef struct Camera {
@@ -32,36 +32,64 @@ typedef struct Camera {
     Raspiraw *raspiraw;
     void *user_data; // пользовательские данные, передаваемые в каллбэк
     error_callback ecb;
-    int webcam_fd;
-    uint8_t *frame_buffer;
-    Thread *thread;
-    pthread_t tid;
+    CaptureSession *capture_session;
 } Camera;
+
+static struct timeval current_time() {
+    static struct timeval cur_time;
+    int r = gettimeofday(&cur_time, NULL);
+    assert(!r); // получение даты в непустую структуру никогда не должно приводить к ошибке
+    return cur_time;
+}
+
+static void camera_handle_frame(uint8_t *buffer, size_t buffer_len, uint16_t image_width, uint16_t image_height, void *cs) {
+    CaptureSession *capture_session = cs;
+    MemBuf *mem_buf = create_mem_buf();
+    printf("Writing png...\n");
+    write_png_to_mem(buffer, mem_buf, image_width, image_height);
+    printf("Png has been written\n");
+    int r = storage_store_frame(capture_session->storage, capture_session->train_id, capture_session->frame_index++,
+                                mem_buf->buffer, mem_buf->size);
+    free_mem_buf(mem_buf);
+
+    if (LPX_SUCCESS != r) {
+        if (errno != 0) {
+            perror("Frame writing");
+        }
+        capture_session->ecb(capture_session->user_data, r);
+        fprintf(stderr, "Stream storage failed, errcode: %d\n", r);
+        return;
+    }
+
+    struct timeval cur_time = current_time();
+
+    FrameMeta *frame = xmalloc(sizeof(FrameMeta));
+    memset(frame, 0, sizeof(FrameMeta));
+    frame->start_time = tv2mks(capture_session->frame_req_time);
+    frame->end_time = tv2mks(cur_time);
+    lst_append(capture_session->frames, frame);
+
+    capture_session->frame_req_time = cur_time;
+}
 
 int8_t camera_init(Storage *storage, char *device, Camera **camera, void *user_data, error_callback ecb) {
     int8_t res = LPX_SUCCESS;
     *camera = xmalloc(sizeof(Camera));
     memset(*camera, 0, sizeof(Camera));
     Raspiraw *raspiraw;
-    raspiraw_init(&raspiraw, storage);
+    if (LPX_SUCCESS != raspiraw_init(&raspiraw, &camera_handle_frame)) {
+        res = CAM_CAP;
+        goto error;
+    }
     Camera *c = *camera;
     c->storage = storage;
     c->ecb = ecb;
     c->user_data = user_data;
     c->raspiraw = raspiraw;
 
-/*    if ((w->webcam_fd = open(device, O_RDWR)) < 0) {
-        res = LPX_IO;
-        perror("open");
-        goto error;
-    }*/
-
     return res;
 
     // завершение по ошибке
-    close_webcam:
-    close(c->webcam_fd);
-
     error:
     free(*camera);
     *camera = NULL;
@@ -69,82 +97,55 @@ int8_t camera_init(Storage *storage, char *device, Camera **camera, void *user_d
     return res;
 }
 
-static bool isRunning(Thread *thread) {
-    bool ret = 0;
-    int r = pthread_mutex_lock(&thread->running_mutex);
-    assert(r == 0 && "Could not not lock running_mutex");
-    ret = thread->running;
-    r = pthread_mutex_unlock(&thread->running_mutex);
-    assert(r == 0 && "Could not not unlock running_mutex");
-    return ret;
-}
+int8_t camera_start_stream(Camera *camera, char *train_id) {
 
-static void stop(Thread *thread) {
-    int r = pthread_mutex_lock(&thread->running_mutex);
-    assert(r == 0 && "Could not not lock running_mutex");
-    thread->running = 0;
-    uint64_t f = 1;
-    // будим poll в цикле потока
-    r = (int) write(thread->stop_fd, &f, sizeof(f));
-    assert(r != -1);
-    r = pthread_mutex_unlock(&thread->running_mutex);
-    printf("Stop flag is set\n");
-    assert(r == 0 && "Could not not unlock running_mutex");
-}
-
-static void *webcam_handle_stream(void *t) {
-    Thread *thread = t;
-    Camera *camera = thread->camera;
-    thread->frame_index = 0;
     List *frames = lst_create();
+    CaptureSession *cs = xmalloc(sizeof(CaptureSession));
+    memset(cs, 0, sizeof(CaptureSession));
+    cs->frame_req_time = current_time();
+    size_t train_id_size = strnlen(train_id, MAX_INT_LEN);
+    cs->train_id = xcalloc(train_id_size + 1, sizeof(char));
+    strncpy(cs->train_id, train_id, train_id_size);
+    cs->train_id = train_id;
+    cs->storage = camera->storage;
+    cs->frames = frames;
+    cs->ecb = camera->ecb;
+    cs->frame_index = 0;
+    cs->user_data = camera->user_data;
 
-    struct pollfd pfd[1];
-    pfd[0].fd = thread->stop_fd;
-    pfd[0].events = POLLIN;
+    int8_t res;
+    if (LPX_SUCCESS != storage_prepare(camera->storage, train_id)) {
+        res = CAM_STRG;
+        goto error;
+    }
 
-    raspiraw_start(camera->raspiraw);
-    printf("started\n");
-    while (isRunning(thread)) {
-        int pr = poll(pfd, ALEN(pfd), -1);
-        if (pr < 0) {
-            camera->ecb(camera->user_data, errno);
-            perror("Poll camera");
-            break;
-        }
-        if (pfd[0].revents != pfd[0].events) {
-            // позвали stop, isRunning вернёт true и поток завершится
-            continue;
-        }
-        int r = gettimeofday(&thread->frame_ready_time, NULL);
-        assert(r == 0);
+    res = raspiraw_start(camera->raspiraw, cs);
 
-/*        r = storage_store_frame(camera->storage, thread->train_id, thread->frame_index++, camera->frame_buffer,
-                                camera->buffer_info.length);
-        if (LPX_SUCCESS != r) {
-            if (errno != 0) {
-                perror("Frame writing");
-            }
-            camera->ecb(camera->user_data, r);
-            fprintf(stderr, "Stream storage failed, errcode: %d\n", r);
-            break;
-        }
+    camera->capture_session = cs;
 
-        FrameMeta *frame = xmalloc(sizeof(FrameMeta));
-        memset(frame, 0, sizeof(FrameMeta));
-        frame->start_time = tv2mks(thread->frame_req_time);
-        frame->end_time = tv2mks(thread->frame_ready_time);
-        lst_append(frames, frame);
+    return res;
 
-        r = gettimeofday(&thread->frame_req_time, NULL);*/
+    error:
+    free(cs->train_id);
+    lst_free(cs->frames);
+    free(cs);
+    return res;
+}
+
+int8_t camera_stop_stream(Camera *camera) {
+    CaptureSession *cs = camera->capture_session;
+    if (cs == NULL) {
+        printf("not streaming ignore stop request\n");
+        return LPX_SUCCESS;
     }
 
     raspiraw_stop(camera->raspiraw);
 
-    size_t frames_cnt = lst_size(frames);
+    size_t frames_cnt = lst_size(cs->frames);
     FrameMeta **frame_array = frames_cnt == 0 ? NULL : xcalloc(frames_cnt, sizeof(FrameMeta *));
     if (frames_cnt > 0) {
-        lst_to_array(frames, (const void **) frame_array);
-        int8_t r = storage_store_stream_idx(camera->storage, thread->train_id, frame_array, frames_cnt);
+        lst_to_array(cs->frames, (const void **) frame_array);
+        int8_t r = storage_store_stream_idx(camera->storage, cs->train_id, frame_array, frames_cnt);
         if (LPX_SUCCESS != r) {
             if (errno != 0) {
                 perror("Stream index writing");
@@ -155,97 +156,18 @@ static void *webcam_handle_stream(void *t) {
     }
 
     free_array((void **) frame_array, frames_cnt);
-    lst_free(frames);
-
-    printf("exited\n");
-    return NULL;
-}
-
-static void free_thread(Thread *thread) {
-    free(thread->train_id);
-    free(thread);
-}
-
-int8_t camera_start_stream(Camera *camera, char *train_id) {
-    int8_t res = LPX_SUCCESS;
-    if (LPX_SUCCESS != storage_prepare(camera->storage, train_id)) {
-        return CAM_STRG;
-    }
-    Thread *thread = xmalloc(sizeof(Thread));
-    memset(thread, 0, sizeof(Thread));
-    camera->thread = thread;
-    thread->running = 1;
-    thread->camera = camera;
-    raspiraw_set_train_id(camera->raspiraw, train_id);
-    size_t train_id_size = strnlen(train_id, MAX_INT_LEN);
-    thread->train_id = xcalloc(train_id_size + 1, sizeof(char));
-    strncpy(thread->train_id, train_id, train_id_size);
-    thread->stop_fd = eventfd(0, EFD_CLOEXEC);
-    if (thread->stop_fd == -1) {
-        res = LPX_IO;
-        perror("Event fd");
-        goto free_thread;
-    }
-    int r = pthread_mutex_init(&thread->running_mutex, NULL);
-    if (0 != r) {
-        res = CAM_THREAD;
-        fprintf(stderr, "Could not initialize running_mutex, errcode: %d\n", r);
-        goto free_thread;
-    }
-
-    r = gettimeofday(&thread->frame_req_time, NULL);
-
-    pthread_t tid;
-    r = pthread_create(&tid, NULL, webcam_handle_stream, thread);
-    if (0 != r) {
-        res = CAM_THREAD;
-        fprintf(stderr, "Could not create thread, errcode: %d\n", r);
-        goto stop_streaming;
-    }
-    camera->tid = tid;
-
-    return res;
-
-    // завершение по ошибке
-    stop_streaming:
-
-    destroy_mutex:
-    r = pthread_mutex_destroy(&thread->running_mutex);
-    assert(r == 0);
-
-    free_thread:
-    free_thread(camera->thread);
-    camera->thread = NULL;
-    camera->tid = 0;
-
-    return res;
-}
-
-int8_t camera_stop_stream(Camera *webcam) {
-    if (webcam->thread == NULL) {
-        printf("not streaming ignore stop request\n");
-        return LPX_SUCCESS;
-    }
-
-    stop(webcam->thread);
-    int r = pthread_join(webcam->tid, NULL);
-    assert(r == 0);
-    r = close(webcam->thread->stop_fd);
-    assert(r == 0);
-    r = pthread_mutex_destroy(&webcam->thread->running_mutex);
-    assert(r == 0);
-    free_thread(webcam->thread);
-    webcam->thread = NULL;
+    lst_free(cs->frames);
+    camera->capture_session = NULL;
 
     return LPX_SUCCESS;
 }
 
 bool camera_streaming(Camera *camera) {
-    return camera->thread != NULL;
+    return camera->capture_session != NULL;
 }
 
 void camera_close(Camera *camera) {
     camera_stop_stream(camera);
-    close(camera->webcam_fd);
+    raspiraw_close(camera->raspiraw);
     free(camera);
 }

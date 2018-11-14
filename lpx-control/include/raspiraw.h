@@ -5,12 +5,15 @@
 
 typedef struct Raspiraw Raspiraw;
 
-int raspiraw_init(Raspiraw **raspiraw, Storage *storage);
+typedef void (*raw_frame_callback)(uint8_t *frame, size_t frame_len, uint16_t image_width, uint16_t image_height,
+                                   void *user_data);
 
-int raspiraw_start(Raspiraw *raspiraw);
+int8_t raspiraw_init(Raspiraw **raspiraw, raw_frame_callback callback);
 
-int raspiraw_stop(Raspiraw *raspiraw);
+int8_t raspiraw_start(Raspiraw *raspiraw, void *user_data);
 
-void raspiraw_set_train_id(Raspiraw *raspiraw, char *train_id);
+int8_t raspiraw_stop(Raspiraw *raspiraw);
+
+int8_t raspiraw_close(Raspiraw *raspiraw);
 
 #endif //LPX_RASPIRAW_H

@@ -6,7 +6,7 @@
 
 // Коды ошибок
 #define CAM_THREAD 2 // ошибки управления потоком
-#define CAM_CAP    3 // ошибки конфигурации вебкамеры
+#define CAM_CAP    3 // ошибки конфигурации камеры
 #define CAM_STRG   4 // ошибки хранилища потоков
 
 typedef struct Camera Camera;

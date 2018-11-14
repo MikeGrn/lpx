@@ -56,6 +56,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <stream_storage.h>
+#include <include/camera.h>
+#include <lpxstd.h>
 
 #include "raw_header.h"
 
@@ -173,8 +175,8 @@ typedef struct {
     int height;
     int left;
     int top;
-    Storage *storage;
-    char *train_id;
+    raw_frame_callback rfcb;
+    void *user_data;
 } RASPIRAW_PARAMS_T;
 
 void update_regs(const struct sensor_def *sensor, struct mode_def *mode, int hflip, int vflip, int exposure, int gain);
@@ -282,20 +284,21 @@ void send_regs(int fd, const struct sensor_def *sensor, const struct sensor_regs
     }
 }
 
-void start_camera_streaming(const struct sensor_def *sensor, struct mode_def *mode) {
+int8_t start_camera_streaming(const struct sensor_def *sensor, struct mode_def *mode) {
     int fd;
     fd = open(i2c_device_name, O_RDWR);
     if (!fd) {
         vcos_log_error("Couldn't open I2C device");
-        return;
+        return CAM_CAP;
     }
     if (ioctl(fd, I2C_SLAVE_FORCE, sensor->i2c_addr) < 0) {
         vcos_log_error("Failed to set I2C address");
-        return;
+        return CAM_CAP;
     }
     send_regs(fd, sensor, mode->regs, mode->num_regs);
     close(fd);
     vcos_log_error("Now streaming...");
+    return LPX_SUCCESS;
 }
 
 void stop_camera_streaming(const struct sensor_def *sensor) {
@@ -313,76 +316,6 @@ void stop_camera_streaming(const struct sensor_def *sensor) {
     close(fd);
 }
 
-/**
- * Allocates and generates a filename based on the
- * user-supplied pattern and the frame number.
- * On successful return, finalName and tempName point to malloc()ed strings
- * which must be freed externally.  (On failure, returns nulls that
- * don't need free()ing.)
- *
- * @param finalName pointer receives an
- * @param pattern sprintf pattern with %d to be replaced by frame
- * @param frame for timelapse, the frame number
- * @return Returns a MMAL_STATUS_T giving result of operation
-*/
-
-MMAL_STATUS_T create_filenames(char **finalName, char *pattern, int frame) {
-    *finalName = NULL;
-    if (0 > asprintf(finalName, pattern, frame)) {
-        return MMAL_ENOMEM;    // It may be some other error, but it is not worth getting it right
-    }
-    return MMAL_SUCCESS;
-}
-
-void decodemetadataline(uint8_t *data, int bpp) {
-    int c = 1;
-    uint8_t tag, dta;
-    uint16_t reg = -1;
-
-    if (data[0] == 0x0a) {
-
-        while (data[c] != 0x07) {
-            tag = data[c++];
-            if (bpp == 10 && (c % 5) == 4)
-                c++;
-            if (bpp == 12 && (c % 3) == 2)
-                c++;
-            dta = data[c++];
-
-            if (tag == 0xaa)
-                reg = (reg & 0x00ff) | (dta << 8);
-            else if (tag == 0xa5)
-                reg = (reg & 0xff00) | dta;
-            else if (tag == 0x5a)
-                vcos_log_error("Register 0x%04x = 0x%02x", reg++, dta);
-            else if (tag == 0x55)
-                vcos_log_error("Skip     0x%04x", reg++);
-            else
-                vcos_log_error("Metadata decode failed %x %x %x", reg, tag, dta);
-        }
-    } else
-        vcos_log_error("Doesn't looks like register set %x!=0x0a", data[0]);
-
-}
-
-int encoding_to_bpp(uint32_t encoding) {
-    switch (encoding) {
-        case MMAL_ENCODING_BAYER_SBGGR10P:
-        case MMAL_ENCODING_BAYER_SGBRG10P:
-        case MMAL_ENCODING_BAYER_SGRBG10P:
-        case MMAL_ENCODING_BAYER_SRGGB10P:
-            return 10;
-        case MMAL_ENCODING_BAYER_SBGGR12P:
-        case MMAL_ENCODING_BAYER_SGBRG12P:
-        case MMAL_ENCODING_BAYER_SGRBG12P:
-        case MMAL_ENCODING_BAYER_SRGGB12P:
-            return 12;
-        default:
-            return 8;
-    };
-
-}
-
 int running = 0;
 
 static void callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer) {
@@ -393,17 +326,18 @@ static void callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer) {
         RASPIRAW_PARAMS_T *cfg = (RASPIRAW_PARAMS_T *) port->userdata;
 
         if (!(buffer->flags & MMAL_BUFFER_HEADER_FLAG_CODECSIDEINFO)) {
-            printf("pts: %li\n", buffer->pts);
-            printf("b->data: %p, b->len: %d\n", &buffer->data, buffer->length);
-            storage_store_frame(cfg->storage, cfg->train_id, count++, buffer->data, buffer->length);
+            if (cfg->user_data) {
+                cfg->rfcb(buffer->data, buffer->length,
+                          (uint16_t) port->format->es->video.width, (uint16_t) port->format->es->video.height,
+                          cfg->user_data);
+            } else {
+                vcos_log_error("Raw handle user data is not set, ignore frame");
+            }
         }
 
         buffer->length = 0;
-        //mmal_port_send_buffer(port, buffer);
     }
     mmal_port_send_buffer(port, buffer);
-/*    else
-        mmal_buffer_header_release(buffer);*/
 }
 
 uint32_t order_and_bit_depth_to_encoding(enum bayer_order order, int bit_depth) {
@@ -479,7 +413,7 @@ typedef struct Raspiraw {
     MMAL_COMPONENT_T *rawcam;
 } Raspiraw;
 
-int raspiraw_init(Raspiraw **r, Storage *storage) {
+int8_t raspiraw_init(Raspiraw **r, raw_frame_callback rfcb) {
     RASPIRAW_PARAMS_T *cfg = malloc(sizeof(RASPIRAW_PARAMS_T));
     uint32_t encoding;
     const struct sensor_def *sensor;
@@ -502,7 +436,8 @@ int raspiraw_init(Raspiraw **r, Storage *storage) {
     cfg->left = -1;
     cfg->top = -1;
     cfg->capture = 1;
-    cfg->storage = storage;
+    cfg->rfcb = rfcb;
+    cfg->mode = 6;
 
     bcm_host_init();
     vcos_log_register("RaspiRaw", VCOS_LOG_CATEGORY);
@@ -893,19 +828,32 @@ int raspiraw_init(Raspiraw **r, Storage *storage) {
             //TODO: goto pool_destroy;
         }
     }
+
+    return LPX_SUCCESS;
 }
 
-int raspiraw_start(Raspiraw *raspiraw) {
-    start_camera_streaming(raspiraw->sensor, raspiraw->sensor_mode);
+int8_t raspiraw_start(Raspiraw *raspiraw, void *user_data) {
+    raspiraw->cfg->user_data = user_data;
+    int8_t res = start_camera_streaming(raspiraw->sensor, raspiraw->sensor_mode);
+
+    if (LPX_SUCCESS != res) {
+        // Блокируем обработку фремов, на случай если стриминг всё-таки запустился
+        raspiraw->cfg->user_data = NULL;
+        raspiraw_stop(raspiraw);
+    } else {
+        running = 1;
+    }
+    return res;
 }
 
-int raspiraw_stop(Raspiraw *raspiraw) {
+int8_t raspiraw_stop(Raspiraw *raspiraw) {
     running = 0;
+    raspiraw->cfg->user_data = NULL;
 
     stop_camera_streaming(raspiraw->sensor);
 }
 
-int raspiraw_close(Raspiraw *raspiraw) {
+int8_t raspiraw_close(Raspiraw *raspiraw) {
     int status;
     port_disable:
     if (raspiraw->cfg->capture) {
@@ -1047,8 +995,4 @@ void update_regs(const struct sensor_def *sensor, struct mode_def *mode, int hfl
             }
         }
     }
-}
-
-void raspiraw_set_train_id(Raspiraw *raspiraw, char *train_id) {
-    raspiraw->cfg->train_id = train_id;
 }

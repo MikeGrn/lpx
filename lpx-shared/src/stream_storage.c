@@ -33,8 +33,8 @@ static char *train_dir(Storage *storage, char *train_id) {
 }
 
 static char *frame_path(char *train_dir, size_t frame_idx) {
-    char frame_file[21 + 5 + 1]; // Любое число uint64_t влезет в 21 символов
-    snprintf(frame_file, 16, "%ld.jpeg", frame_idx);
+    char frame_file[21 + 4 + 1]; // Любое число uint64_t влезет в 21 символов
+    snprintf(frame_file, 16, "%ld.png", frame_idx);
     char *frame_path = append_path(train_dir, frame_file);
     return frame_path;
 }
