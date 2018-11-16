@@ -5,8 +5,7 @@
 
 typedef struct Raspiraw Raspiraw;
 
-typedef void (*raw_frame_callback)(uint8_t *frame, size_t frame_len, uint16_t image_width, uint16_t image_height,
-                                   void *user_data);
+typedef void (*raw_frame_callback)(uint8_t *frame, size_t frame_len, void *user_data);
 
 int8_t raspiraw_init(Raspiraw **raspiraw, raw_frame_callback callback);
 

@@ -13,7 +13,7 @@ typedef struct Camera Camera;
 
 typedef void (*error_callback)(void *user_data, int errcode);
 
-int8_t camera_init(Storage *storage, char *device, Camera **camera, void *user_data, error_callback callback);
+int8_t camera_init(Storage *storage, Camera **camera, void *user_data, error_callback callback);
 
 int8_t camera_start_stream(Camera *camera, char *train_id);
 

@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
     storage_open(storage_dir, &s);
 
     Camera *cam;
-    if (LPX_SUCCESS != camera_init(s, dev, &cam, NULL, ec)) {
+    if (LPX_SUCCESS != camera_init(s, &cam, NULL, ec)) {
         printf("camera error\n");
         goto close_storage;
     }

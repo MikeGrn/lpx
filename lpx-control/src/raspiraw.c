@@ -316,27 +316,20 @@ void stop_camera_streaming(const struct sensor_def *sensor) {
     close(fd);
 }
 
-int running = 0;
-
 static void callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer) {
-    static uint32_t count = 0;
     vcos_log_error("Buffer %p returned, filled %d, timestamp %li, flags %04X", buffer, buffer->length, buffer->pts,
                    buffer->flags);
-    if (running) {
-        RASPIRAW_PARAMS_T *cfg = (RASPIRAW_PARAMS_T *) port->userdata;
+    RASPIRAW_PARAMS_T *cfg = (RASPIRAW_PARAMS_T *) port->userdata;
 
-        if (!(buffer->flags & MMAL_BUFFER_HEADER_FLAG_CODECSIDEINFO)) {
-            if (cfg->user_data) {
-                cfg->rfcb(buffer->data, buffer->length,
-                          (uint16_t) port->format->es->video.width, (uint16_t) port->format->es->video.height,
-                          cfg->user_data);
-            } else {
-                vcos_log_error("Raw handle user data is not set, ignore frame");
-            }
+    if (!(buffer->flags & MMAL_BUFFER_HEADER_FLAG_CODECSIDEINFO)) {
+        if (cfg->user_data) {
+            cfg->rfcb(buffer->data, buffer->length, cfg->user_data);
+        } else {
+            vcos_log_error("Raw handle user data is not set, ignore frame");
         }
-
-        buffer->length = 0;
     }
+
+    buffer->length = 0;
     mmal_port_send_buffer(port, buffer);
 }
 
@@ -748,7 +741,7 @@ int8_t raspiraw_init(Raspiraw **r, raw_frame_callback rfcb) {
             vcos_log_error("Failed to enable port");
             //TODO: goto pool_destroy;
         }
-        running = 1;
+
         for (i = 0; i < raspiraw->output->buffer_num; i++) {
             MMAL_BUFFER_HEADER_T *buffer = mmal_queue_get(raspiraw->pool->queue);
 
@@ -837,17 +830,15 @@ int8_t raspiraw_start(Raspiraw *raspiraw, void *user_data) {
     int8_t res = start_camera_streaming(raspiraw->sensor, raspiraw->sensor_mode);
 
     if (LPX_SUCCESS != res) {
-        // Блокируем обработку фремов, на случай если стриминг всё-таки запустился
+        // На всякий случай пробуем явно остановить стриминг
         raspiraw->cfg->user_data = NULL;
         raspiraw_stop(raspiraw);
-    } else {
-        running = 1;
     }
+
     return res;
 }
 
 int8_t raspiraw_stop(Raspiraw *raspiraw) {
-    running = 0;
     raspiraw->cfg->user_data = NULL;
 
     stop_camera_streaming(raspiraw->sensor);

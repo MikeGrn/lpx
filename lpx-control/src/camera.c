@@ -13,7 +13,6 @@
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
-#include <include/converter.h>
 #include "../include/raspiraw.h"
 
 typedef struct CaptureSession {
@@ -24,6 +23,8 @@ typedef struct CaptureSession {
     void *user_data; // пользовательские данные, передаваемые в каллбэк
     error_callback ecb;
     List *frames;
+    bool stopping;
+    pthread_mutex_t mutex;
 } CaptureSession;
 
 
@@ -42,15 +43,22 @@ static struct timeval current_time() {
     return cur_time;
 }
 
-static void camera_handle_frame(uint8_t *buffer, size_t buffer_len, uint16_t image_width, uint16_t image_height, void *cs) {
+static void camera_handle_frame(uint8_t *buffer, size_t buffer_len, void *cs) {
     CaptureSession *capture_session = cs;
-    MemBuf *mem_buf = create_mem_buf();
-    printf("Writing png...\n");
-    write_png_to_mem(buffer, mem_buf, image_width, image_height);
-    printf("Png has been written\n");
-    int r = storage_store_frame(capture_session->storage, capture_session->train_id, capture_session->frame_index++,
-                                mem_buf->buffer, mem_buf->size);
-    free_mem_buf(mem_buf);
+
+    bool stopping;
+    int r = pthread_mutex_lock(&capture_session->mutex);
+    assert(r == 0 && "Could not not lock running_mutex");
+    stopping = capture_session->stopping;
+    r = pthread_mutex_unlock(&capture_session->mutex);
+    assert(r == 0 && "Could not not unlock running_mutex");
+
+    if (stopping) {
+        return;
+    }
+
+    r = storage_store_frame(capture_session->storage, capture_session->train_id, capture_session->frame_index++,
+                                buffer, buffer_len);
 
     if (LPX_SUCCESS != r) {
         if (errno != 0) {
@@ -72,7 +80,7 @@ static void camera_handle_frame(uint8_t *buffer, size_t buffer_len, uint16_t ima
     capture_session->frame_req_time = cur_time;
 }
 
-int8_t camera_init(Storage *storage, char *device, Camera **camera, void *user_data, error_callback ecb) {
+int8_t camera_init(Storage *storage, Camera **camera, void *user_data, error_callback ecb) {
     int8_t res = LPX_SUCCESS;
     *camera = xmalloc(sizeof(Camera));
     memset(*camera, 0, sizeof(Camera));
@@ -112,10 +120,18 @@ int8_t camera_start_stream(Camera *camera, char *train_id) {
     cs->ecb = camera->ecb;
     cs->frame_index = 0;
     cs->user_data = camera->user_data;
+    cs->stopping = false;
 
     int8_t res;
     if (LPX_SUCCESS != storage_prepare(camera->storage, train_id)) {
         res = CAM_STRG;
+        goto error;
+    }
+
+    int r = pthread_mutex_init(&cs->mutex, NULL);
+    if (0 != r) {
+        res = CAM_THREAD;
+        fprintf(stderr, "Could not initialize capture session mutex, errcode: %d\n", r);
         goto error;
     }
 
@@ -132,33 +148,51 @@ int8_t camera_start_stream(Camera *camera, char *train_id) {
     return res;
 }
 
-int8_t camera_stop_stream(Camera *camera) {
-    CaptureSession *cs = camera->capture_session;
-    if (cs == NULL) {
-        printf("not streaming ignore stop request\n");
-        return LPX_SUCCESS;
-    }
+static int8_t camera_write_frame_index(CaptureSession *capture_session) {
+    int8_t res = LPX_SUCCESS;
 
-    raspiraw_stop(camera->raspiraw);
-
-    size_t frames_cnt = lst_size(cs->frames);
+    size_t frames_cnt = lst_size(capture_session->frames);
     FrameMeta **frame_array = frames_cnt == 0 ? NULL : xcalloc(frames_cnt, sizeof(FrameMeta *));
     if (frames_cnt > 0) {
-        lst_to_array(cs->frames, (const void **) frame_array);
-        int8_t r = storage_store_stream_idx(camera->storage, cs->train_id, frame_array, frames_cnt);
+        lst_to_array(capture_session->frames, (const void **) frame_array);
+        int8_t r = storage_store_stream_idx(capture_session->storage, capture_session->train_id, frame_array, frames_cnt);
         if (LPX_SUCCESS != r) {
             if (errno != 0) {
+                res = CAM_STRG;
                 perror("Stream index writing");
             }
-            camera->ecb(camera->user_data, r);
+            capture_session->ecb(capture_session->user_data, r);
             fprintf(stderr, "Stream storage failed, errcode: %d\n", r);
         }
     }
 
     free_array((void **) frame_array, frames_cnt);
-    lst_free(cs->frames);
-    camera->capture_session = NULL;
+    lst_free(capture_session->frames);
+    free(capture_session);
+    
+    return res;
+}
 
+int8_t camera_stop_stream(Camera *camera) {
+    CaptureSession *cs = camera->capture_session;
+    if (cs == NULL || cs->stopping) {
+        printf("not streaming ignore stop request\n");
+        return LPX_SUCCESS;
+    }
+
+    int r = pthread_mutex_lock(&cs->mutex);
+    assert(r == 0 && "Could not not lock running_mutex");
+    cs->stopping = true;
+    r = pthread_mutex_unlock(&cs->mutex);
+    assert(r == 0 && "Could not not unlock running_mutex");
+
+    raspiraw_stop(camera->raspiraw);
+
+    int8_t write_res = camera_write_frame_index(cs);
+    if (LPX_SUCCESS != write_res) {
+        camera->ecb(camera->user_data, write_res);
+    }
+    
     return LPX_SUCCESS;
 }
 
