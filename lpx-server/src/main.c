@@ -178,7 +178,7 @@ static int handle_stream_get(LpxServer *lpx, struct MHD_Connection *connection, 
 
     response = MHD_create_response_from_callback(MHD_SIZE_UNKNOWN, 10240, stream_reader_callback, stream,
                                                  stream_close_callback);
-    ret = MHD_add_response_header(response, "Content-Type", "application/zip");
+    ret = MHD_add_response_header(response, "Content-Type", "application/octet-stream");
     if (ret != MHD_YES) {
         return ret;
     }

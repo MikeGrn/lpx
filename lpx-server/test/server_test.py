@@ -22,7 +22,8 @@ class TestLpxServer(unittest.TestCase):
         for the_file in os.listdir(test_data_dir):
             src_path = os.path.join(test_data_dir, the_file)
             dst_path = os.path.join(TestLpxServer.STORAGE_DIR, the_file)
-            shutil.copytree(src_path, dst_path)
+            if os.path.isdir(src_path):
+                shutil.copytree(src_path, dst_path)
 
     def setUp(self):
         self.prepare_storage()
@@ -119,16 +120,12 @@ class TestLpxServer(unittest.TestCase):
 
     def check_frame(self, archive, offset, frame_idx):
         index_len = len(str(frame_idx))
-        name_len = index_len + len(".jpeg") + 1
+        name_len = index_len + 1
         header = name_len + 8
         to = offset + header
         (name, size) = struct.unpack("<" + str(name_len) + "sQ", archive[offset:to])
-        self.assertEqual(name.decode("ascii"), str(frame_idx) + ".jpeg\00")
-        self.assertEqual(size, 921600)
-        f = open("../../lpx-shared/test/test_dir/1529488179409/" + str(frame_idx) + ".jpeg", "rb")
-        original = f.read()
-        f.close()
-        self.assertEqual(archive[to:to + size], original)
+        self.assertEqual(name.decode("ascii"), str(frame_idx) + "\00")
+        self.assertEqual(size, 1025078)
         return header + size
 
     def test_delete_stream(self):

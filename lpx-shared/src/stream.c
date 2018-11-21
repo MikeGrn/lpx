@@ -8,6 +8,7 @@
 #include <poll.h>
 #include <assert.h>
 #include <sys/stat.h>
+#include <bmp.h>
 #include "../include/stream.h"
 
 typedef struct VideoStreamBytesStream {
@@ -31,6 +32,26 @@ typedef struct VideoStreamBytesStream {
      * Файл добавляемый в архив в данный момент
      */
     FILE *file;
+
+    /**
+     * Указатель на буффер с raw-фреймом
+     */
+    uint8_t *raw_buf;
+
+    /**
+     * Указатель на буффер с bmp-версией файла
+     */
+    uint8_t *bmp_start;
+
+    /**
+     * Указатель на читаемую часть буффера с bmp-версией файла
+     */
+    uint8_t *bmp;
+    
+    /**
+     * Указатель на первый адрес после буфера с bmp-версией файла
+     */
+    uint8_t *bmp_eof;
 
 } VideoStreamBytesStream;
 
@@ -71,6 +92,14 @@ ssize_t stream_find_frame_abs(FrameMeta **index, size_t index_size, uint64_t tim
 }
 
 static void close_current_file(VideoStreamBytesStream *stream) {
+    if (stream->raw_buf) {
+        free(stream->raw_buf);
+        stream->raw_buf = NULL;
+    }
+    if (stream->bmp_start) {
+        free(stream->bmp_start);
+        stream->bmp_start = NULL;
+    }
     fclose(stream->file);
     stream->file = NULL;
 }
@@ -130,7 +159,24 @@ static int8_t read_part(VideoStreamBytesStream *stream, uint8_t *buf, size_t siz
         if (r != 0) {
             return LPX_IO;
         }
-        uint64_t fsize = (uint64_t) st.st_size;
+
+        size_t raw_buf_size = (size_t) st.st_size;
+        stream->raw_buf = xmalloc(raw_buf_size);
+
+        size_t raw_read = fread(stream->raw_buf, sizeof(uint8_t), raw_buf_size, stream->file);
+        if (raw_read < raw_buf_size) {
+            return LPX_IO;
+        }
+        
+        size_t bmp_size;
+        if (raw12_to_bmp(stream->raw_buf, 1280, 800, &stream->bmp_start, &bmp_size)) {
+            return LPX_IO;
+        }
+        free(stream->raw_buf);
+        stream->bmp = stream->bmp_start;
+        stream->bmp_eof = stream->bmp + sizeof(uint8_t) * bmp_size;
+
+        uint64_t fsize = (uint64_t) bmp_size;
         size_t fsize_size = sizeof(fsize);
 
         memcpy(buf, &fsize, fsize_size);
@@ -139,16 +185,14 @@ static int8_t read_part(VideoStreamBytesStream *stream, uint8_t *buf, size_t siz
         *read += fsize_size;
     }
 
-    size_t frame_read = fread(buf, sizeof(uint8_t), size, stream->file);
-    if (frame_read < size) {
-        if (feof(stream->file)) {
-            close_current_file(stream);
-        } else {
-            res = LPX_IO;
-        }
+    size_t to_cpy = size < stream->bmp_eof - stream->bmp ? size : stream->bmp_eof - stream->bmp;
+    memcpy(buf, stream->bmp, to_cpy);
+    stream->bmp += to_cpy;
+    if (to_cpy < size) {
+        close_current_file(stream);
     }
 
-    *read += frame_read;
+    *read += to_cpy;
 
     return res;
 }
@@ -177,6 +221,12 @@ ssize_t stream_read(VideoStreamBytesStream *stream, uint8_t *buf, size_t max) {
 }
 
 void stream_close(VideoStreamBytesStream *stream) {
+    if (stream->raw_buf) {
+        free(stream->raw_buf);
+    }
+    if (stream->bmp_start) {
+        free(stream->bmp_start);
+    }
     if (stream->file) {
         fclose(stream->file);
     }

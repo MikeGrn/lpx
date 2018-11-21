@@ -61,8 +61,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "raw_header.h"
 
-#include "include/converter.h"
-
 #include "../include/raspiraw.h"
 
 #define DEFAULT_I2C_DEVICE 0
@@ -430,7 +428,7 @@ int8_t raspiraw_init(Raspiraw **r, raw_frame_callback rfcb) {
     cfg->top = -1;
     cfg->capture = 1;
     cfg->rfcb = rfcb;
-    cfg->mode = 6;
+    cfg->mode = 0;
 
     bcm_host_init();
     vcos_log_register("RaspiRaw", VCOS_LOG_CATEGORY);
