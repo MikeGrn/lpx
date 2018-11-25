@@ -3,6 +3,10 @@
 
 #include "stream_storage.h"
 
+#define RR_MMAL 1 // ошибки MMAL
+#define RR_CFG  2 // ошибки конфигурации
+#define RR_IO   3 // ошибки ввода вывода по i2c
+
 typedef struct Raspiraw Raspiraw;
 
 typedef void (*raw_frame_callback)(uint8_t *frame, size_t frame_len, void *user_data);

@@ -64,9 +64,9 @@ static void *handle_device(void *ts) {
         uint8_t value = 0;
 
         if (digitalRead(0)) {
-            value = 1;
-        } else {
             value = 0;
+        } else {
+            value = 1;
         }
 
         printf("read %d ", value);

@@ -107,8 +107,6 @@ int main(int argc, char **argv) {
             break;
         }
 
-        // сейчас эти события никогда не прилетают
-        // раньше они прилетали от БУСа, а в будщем планируется, что они будут прилитать от чего-то по GPIO
         if (e.code == TS_INT_TRAIN_IN) {
             struct timeval time;
             gettimeofday(&time, NULL);
