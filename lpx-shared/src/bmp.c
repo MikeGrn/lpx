@@ -5,6 +5,10 @@
 #include <string.h>
 #include <stdbool.h>
 
+static const int HEADER_SIZE = 54;
+
+static const int COLORS_COUNT = 256;
+
 static void fill_bmp_header(size_t width, size_t height, size_t image_size, size_t file_size, uint8_t *bitmap) {
     // -- FILE HEADER -- //
 
@@ -12,13 +16,13 @@ static void fill_bmp_header(size_t width, size_t height, size_t image_size, size
     bitmap[0] = 0x42; // B
     bitmap[1] = 0x4d; // M
 
-    // file size
-    *((size_t *) &bitmap[2]) = file_size;
+    // file size - I do not know why, but some viewers discard to present image with file size equal to actual file size
+    *((size_t *) &bitmap[2]) = file_size - 4;
 
     // reserved field (in hex. 00 00 00 00)
     memset(&bitmap[6], 0, sizeof(uint8_t) * 4);
 
-    *((uint32_t *) &bitmap[10]) = (uint32_t) 54 + (256 * 4);
+    *((uint32_t *) &bitmap[10]) = (uint32_t) HEADER_SIZE + (COLORS_COUNT * 4) - 4;
 
     // -- BITMAP HEADER -- //
 
@@ -59,23 +63,23 @@ static void fill_bmp_header(size_t width, size_t height, size_t image_size, size
     // number of important colors
     memset(&bitmap[50], 0, sizeof(uint8_t) * 4);
 
-    for (uint16_t i = 0; i < 256; i++) {
-        bitmap[54 + i * 4 + 0] = (uint8_t) i;
-        bitmap[54 + i * 4 + 1] = (uint8_t) i;
-        bitmap[54 + i * 4 + 2] = (uint8_t) i;
-        bitmap[54 + i * 4 + 3] = 0;
+    for (uint16_t i = 0; i < COLORS_COUNT; i++) {
+        bitmap[HEADER_SIZE + i * 4 + 0] = (uint8_t) i;
+        bitmap[HEADER_SIZE + i * 4 + 1] = (uint8_t) i;
+        bitmap[HEADER_SIZE + i * 4 + 2] = (uint8_t) i;
+        bitmap[HEADER_SIZE + i * 4 + 3] = 0;
     }
 }
 
 static uint8_t *generate_bmp(size_t width, size_t height, const uint8_t *bitmap, size_t *bmp_size) {
     size_t image_size = width * height;
-    size_t file_size = 54 + (256 * 4) + image_size;
+    size_t file_size = HEADER_SIZE + (COLORS_COUNT * 4) + image_size;
     uint8_t *content = malloc(sizeof(uint8_t) * file_size);
     fill_bmp_header(width, height, image_size, file_size, content);
 
     // -- PIXEL DATA -- //
-    for (int i = 54 + (256 * 4); i < file_size; i++) {
-        content[i] = bitmap[i - (54 + 256 * 4)];
+    for (int i = HEADER_SIZE + (COLORS_COUNT * 4); i < file_size; i++) {
+        content[i] = bitmap[i - (HEADER_SIZE + COLORS_COUNT * 4)];
     }
 
     *bmp_size = file_size;
